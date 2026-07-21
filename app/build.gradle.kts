@@ -34,8 +34,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = true // Activa R8 para eliminar código no usado
-            isShrinkResources = true // Elimina recursos (imágenes, xml) no usados
+            isMinifyEnabled = false // Activa R8 para eliminar código no usado
+            isShrinkResources = false // Elimina recursos (imágenes, xml) no usados
             ndk {
                 debugSymbolLevel = "none" // Elimina símbolos de depuración de las librerías nativas (FFmpeg, etc)
             }
