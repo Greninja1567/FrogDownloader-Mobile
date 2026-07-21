@@ -40,7 +40,8 @@ class PlaybackService : MediaLibraryService() {
             override fun isCommandAvailable(command: Int): Boolean {
                 if (command == Player.COMMAND_SEEK_TO_NEXT || command == Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM ||
                     command == Player.COMMAND_SEEK_TO_PREVIOUS || command == Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM ||
-                    command == Player.COMMAND_SET_SHUFFLE_MODE || command == Player.COMMAND_SET_REPEAT_MODE) {
+                    command == Player.COMMAND_SET_SHUFFLE_MODE || command == Player.COMMAND_SET_REPEAT_MODE ||
+                    command == Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM || command == Player.COMMAND_SEEK_TO_DEFAULT_POSITION) {
                     return true
                 }
                 return super.isCommandAvailable(command)
@@ -54,6 +55,8 @@ class PlaybackService : MediaLibraryService() {
                     .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
                     .add(Player.COMMAND_SET_SHUFFLE_MODE)
                     .add(Player.COMMAND_SET_REPEAT_MODE)
+                    .add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+                    .add(Player.COMMAND_SEEK_TO_DEFAULT_POSITION)
                     .build()
             }
 
