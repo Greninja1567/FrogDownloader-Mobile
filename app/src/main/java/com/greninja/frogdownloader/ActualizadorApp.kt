@@ -19,11 +19,20 @@ import kotlin.concurrent.thread
 object ActualizadorApp {
 
     private const val GITHUB_API_URL = "https://api.github.com/repos/Greninja1567/FrogDownloader-Mobile/releases/latest"
-    private const val VERSION_ACTUAL = "1.0.6"
 
     data class ReleaseInfo(val version: String, val downloadUrl: String, val body: String)
 
+    fun obtenerVersionLocal(contexto: Context): String {
+        return try {
+            val pInfo = contexto.packageManager.getPackageInfo(contexto.packageName, 0)
+            pInfo.versionName ?: "1.0.0"
+        } catch (e: Exception) {
+            "1.0.0"
+        }
+    }
+
     fun buscarActualizacion(contexto: Context, alFinalizar: (ReleaseInfo?) -> Unit) {
+        val versionLocal = obtenerVersionLocal(contexto)
         thread {
             try {
                 val url = URL(GITHUB_API_URL)
@@ -48,7 +57,7 @@ object ActualizadorApp {
                         }
                     }
 
-                    if (downloadUrl.isNotEmpty() && esVersionNueva(tagName, VERSION_ACTUAL)) {
+                    if (downloadUrl.isNotEmpty() && esVersionNueva(tagName, versionLocal)) {
                         alFinalizar(ReleaseInfo(tagName, downloadUrl, body))
                     } else {
                         alFinalizar(null)
@@ -107,7 +116,7 @@ object ActualizadorApp {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             contexto.registerReceiver(receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), Context.RECEIVER_EXPORTED)
         } else {
-            contexto.registerReceiver(receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE))
+            contexto.registerReceiver(receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), Context.RECEIVER_NOT_EXPORTED)
         }
     }
 
