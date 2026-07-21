@@ -51,7 +51,13 @@ class MainApp : Application() {
             exoPlayerGlobal = ExoPlayer.Builder(this)
                 .setLoadControl(controlDeCargaOptimizado)
                 .setAudioAttributes(audioAttributes, true)
-                .build()
+                .build().apply {
+                    addListener(object : androidx.media3.common.Player.Listener {
+                        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                            GestorAudio.inicializarEfectos(audioSessionId, this@MainApp)
+                        }
+                    })
+                }
 
             thread {
                 try {

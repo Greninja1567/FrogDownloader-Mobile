@@ -11,6 +11,9 @@ import android.net.Uri
 import android.os.Environment
 import android.view.View
 import android.widget.Toast
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -33,9 +36,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
@@ -49,11 +57,16 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -67,7 +80,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -94,13 +106,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -135,6 +141,8 @@ import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 import java.io.File
 import kotlin.concurrent.thread
 
@@ -155,6 +163,14 @@ val ColorGlassVerdePrimario = Color(0xFF2ECC71) // Verde esmeralda iOS
 val ColorGlassBlancoTransp = Color(0xB3FFFFFF)  // Blanco con 70% opacidad
 val ColorGlassVerdeTransp = Color(0x99E8F5E9)   // Verde muy claro con 60% opacidad
 val ColorGlassBorde = Color(0x4DFFFFFF)        // Borde blanco sutil
+
+// Función auxiliar para formatear milisegundos a MM:SS
+fun formatTime(ms: Long): String {
+    val totalSeconds = (ms / 1000).coerceAtLeast(0)
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "%02d:%02d".format(minutes, seconds)
+}
 
 enum class ModoTema { CLARO, OSCURO, AUTOMATICO, CRISTAL_IOS }
 var temaAppGlobal by mutableStateOf(ModoTema.AUTOMATICO)
@@ -326,6 +342,67 @@ val listaDescargasActivas = mutableStateListOf<DescargaInfo>()
 // Guarda si el usuario quiere descargar solo audio (MP3) o video completo
 var formatoSoloAudioGlobal by mutableStateOf(false)
 
+@Composable
+fun LinearWavyProgressIndicator(
+    progress: Float,
+    estaActivo: Boolean = true,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+    trackColor: Color = MaterialTheme.colorScheme.surfaceVariant
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "wavy")
+    val phase by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 2f * Math.PI.toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "phase"
+    )
+
+    val amplitudAnimada by animateFloatAsState(
+        targetValue = if (estaActivo) 4f else 0f,
+        animationSpec = tween(500),
+        label = "amplitude"
+    )
+
+    Canvas(modifier = modifier.height(12.dp)) {
+        val width = size.width
+        val height = size.height
+        val centerY = height / 2
+        val amplitude = amplitudAnimada.dp.toPx()
+        val wavelength = 25.dp.toPx()
+        
+        // Dibuja el fondo (track)
+        drawLine(
+            color = trackColor,
+            start = Offset(0f, centerY),
+            end = Offset(width, centerY),
+            strokeWidth = 3.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+
+        val path = Path()
+        val segments = 80
+        val activeWidth = width * progress
+        
+        if (activeWidth > 0f) {
+            for (i in 0..segments) {
+                val x = (i.toFloat() / segments) * activeWidth
+                val y = centerY + amplitude * kotlin.math.sin((x / wavelength) * 2 * Math.PI.toFloat() - phase)
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+
+            drawPath(
+                path = path,
+                color = color,
+                style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+            )
+        }
+    }
+}
+
 enum class Pantallas(val ruta: String, val titulo: String, val icono: ImageVector) {
     Video("video", "Stream", Icons.Default.VideoLibrary),
     Descargas("descargas", "Descargas", Icons.Default.Download),
@@ -406,9 +483,9 @@ fun InterfazPrincipal(windowSizeClass: WindowSizeClass) {
                                 label = { Text(pantalla.titulo) },
                                 selected = pantallaActual == pantalla,
                                 colors = NavigationRailItemDefaults.colors(
-                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                    selectedIconColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.primary,
                                     unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                    indicatorColor = MaterialTheme.colorScheme.secondary
+                                    indicatorColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario.copy(alpha = 0.5f) else MaterialTheme.colorScheme.secondary
                                 ),
                                 onClick = {
                                     if (pantallaActual != pantalla) {
@@ -439,9 +516,9 @@ fun InterfazPrincipal(windowSizeClass: WindowSizeClass) {
                                         label = { Text(pantalla.titulo) },
                                         selected = pantallaActual == pantalla,
                                         colors = NavigationBarItemDefaults.colors(
-                                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                                            selectedIconColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.primary,
                                             unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                            indicatorColor = MaterialTheme.colorScheme.secondary
+                                            indicatorColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario.copy(alpha = 0.5f) else MaterialTheme.colorScheme.secondary
                                         ),
                                         onClick = {
                                             if (pantallaActual != pantalla) {
@@ -528,7 +605,8 @@ object GestorReproduccion {
                 request.addOption("--get-url")
                 
                 val alturaMapeada = resolucionReproduccionGlobal.replace("p", "")
-                request.addOption("-f", "best[height<=$alturaMapeada][ext=mp4]/best[height<=$alturaMapeada]/best")
+                // PRIORIDAD: Opus 251 (Mejor audio) + Video en resolución elegida
+                request.addOption("-f", "bestvideo[height<=$alturaMapeada]+251/bestvideo[height<=$alturaMapeada]+bestaudio/best[height<=$alturaMapeada]/best")
 
                 val response = YoutubeDL.getInstance().execute(request)
                 val linkStreamingReal = response.out.split("\n").firstOrNull { it.startsWith("http") } ?: return@thread
@@ -590,6 +668,28 @@ fun PantallaVideo(esTablet: Boolean = false) {
 
     var urlPendiente by remember { mutableStateOf("") }
     var mostrarDialogoOpcionesCola by remember { mutableStateOf(false) }
+
+    // --- ESTADOS PARA CONTROLES PERSONALIZADOS ---
+    var mostrarControles by remember { mutableStateOf(true) }
+    var estaReproduciendo by remember { mutableStateOf(exoPlayer.isPlaying) }
+    var posicionActual by remember { mutableLongStateOf(0L) }
+    var duracionTotal by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(mostrarControles) {
+        if (mostrarControles) {
+            delay(3000.milliseconds)
+            mostrarControles = false
+        }
+    }
+
+    LaunchedEffect(exoPlayer) {
+        while (true) {
+            posicionActual = exoPlayer.currentPosition
+            duracionTotal = exoPlayer.duration
+            estaReproduciendo = exoPlayer.isPlaying
+            delay(500)
+        }
+    }
 
     val procesarCarga = { url: String, reemplazar: Boolean ->
         cargandoPlaylist = true
@@ -712,18 +812,117 @@ fun PantallaVideo(esTablet: Boolean = false) {
     }
 
     val componenteReproductor = @Composable {
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+        val esGlass = temaAppGlobal == ModoTema.CRISTAL_IOS
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { mostrarControles = !mostrarControles },
+            contentAlignment = Alignment.Center
+        ) {
             AndroidView(
                 factory = { ctx ->
                     PlayerView(ctx).apply {
                         player = exoPlayer
-                        useController = true
-                        setFullscreenButtonClickListener { esFull -> esPantallaCompleta = esFull }
+                        useController = false // Desactivamos controles nativos
                     }
                 },
-                modifier = Modifier.fillMaxSize(),
-                update = { playerView -> playerView.setFullscreenButtonState(esPantallaCompleta) }
+                modifier = Modifier.fillMaxSize()
             )
+
+            // CAPA DE CONTROLES PERSONALIZADOS
+            AnimatedVisibility(
+                visible = mostrarControles,
+                enter = fadeIn() + scaleIn(initialScale = 0.9f),
+                exit = fadeOut() + scaleOut(targetScale = 0.9f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.4f))
+                ) {
+                    // BOTONES CENTRALES
+                    Row(
+                        modifier = Modifier.align(Alignment.Center),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(32.dp)
+                    ) {
+                        IconButton(
+                            onClick = { GestorReproduccion.cargarYReproducirIndice(indiceActualVideoGlobal - 1, contexto) },
+                            enabled = indiceActualVideoGlobal > 0,
+                            colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White)
+                        ) {
+                            Icon(Icons.Default.SkipPrevious, contentDescription = "Anterior", modifier = Modifier.size(36.dp))
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(CircleShape)
+                                .background(if (esGlass) ColorGlassVerdePrimario.copy(alpha = 0.8f) else MaterialTheme.colorScheme.primary)
+                                .clickable {
+                                    if (estaReproduciendo) exoPlayer.pause() else exoPlayer.play()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            val escala by animateFloatAsState(if (estaReproduciendo) 1f else 1.2f, label = "playScale")
+                            Icon(
+                                imageVector = if (estaReproduciendo) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = "Play/Pause",
+                                modifier = Modifier.size(40.dp).scale(escala),
+                                tint = if (esGlass) Color.White else MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { GestorReproduccion.cargarYReproducirIndice(indiceActualVideoGlobal + 1, contexto) },
+                            enabled = indiceActualVideoGlobal < videosPlaylistGlobal.size - 1,
+                            colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White)
+                        ) {
+                            Icon(Icons.Default.SkipNext, contentDescription = "Siguiente", modifier = Modifier.size(36.dp))
+                        }
+                    }
+
+                    // BARRA INFERIOR (Ondulada y Tiempo)
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        if (duracionTotal > 0L) {
+                            LinearWavyProgressIndicator(
+                                progress = (posicionActual.toFloat() / duracionTotal.toFloat()).coerceIn(0f, 1f),
+                                estaActivo = estaReproduciendo,
+                                modifier = Modifier.fillMaxWidth(),
+                                color = if (esGlass) ColorGlassVerdePrimario else MaterialTheme.colorScheme.primary,
+                                trackColor = Color.White.copy(alpha = 0.3f)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(formatTime(posicionActual), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                                Text(formatTime(duracionTotal), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+
+                    // BOTÓN FULLSCREEN
+                    IconButton(
+                        onClick = { esPantallaCompleta = !esPantallaCompleta },
+                        modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+                        colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White)
+                    ) {
+                        Icon(
+                            imageVector = if (esPantallaCompleta) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                            contentDescription = "Pantalla Completa"
+                        )
+                    }
+                }
+            }
+
             if (cargandoVideoGlobal) {
                 Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.7f)), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1194,7 +1393,7 @@ fun PantallaDescargas() {
                             Text(descarga.titulo, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            LinearProgressIndicator(
+                            LinearWavyProgressIndicator(
                                 progress = descarga.progreso / 100f,
                                 modifier = Modifier.fillMaxWidth(),
                                 color = MaterialTheme.colorScheme.primary
@@ -1489,6 +1688,56 @@ fun PantallaConfiguraciones() {
             },
             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
         )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // --- NUEVA SECCIÓN: AUDIO PREMIUM ---
+        Text("Mejora de Sonido Premium", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Spacer(modifier = Modifier.height(8.dp))
+
+        val prefs = PreferenciasApp(contexto)
+        var audioPremiumActivado by remember { mutableStateOf(prefs.obtenerBoolean(PreferenciasApp.KEY_AUDIO_PREMIUM, false)) }
+        var nivelBajos by remember { mutableStateOf(prefs.obtenerString(PreferenciasApp.KEY_NIVEL_BAJOS, "Medio")) }
+
+        ListItem(
+            headlineContent = { Text("Sonido Hi-Fi y Loudness") },
+            supportingContent = { Text("Aumenta la potencia y nitidez (Opus 251).") },
+            trailingContent = {
+                Switch(
+                    checked = audioPremiumActivado,
+                    onCheckedChange = { nuevoValor ->
+                        audioPremiumActivado = nuevoValor
+                        prefs.guardarBoolean(PreferenciasApp.KEY_AUDIO_PREMIUM, nuevoValor)
+                        GestorAudio.actualizarEstado(nuevoValor, contexto)
+                    }
+                )
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        )
+
+        var expandidoBajos by remember { mutableStateOf(false) }
+        ExposedDropdownMenuBox(expanded = expandidoBajos, onExpandedChange = { expandidoBajos = !expandidoBajos }) {
+            OutlinedTextField(
+                value = "Refuerzo de Bajos: $nivelBajos",
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Potencia de Graves") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandidoBajos) },
+                shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else OutlinedTextFieldDefaults.shape,
+                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                enabled = audioPremiumActivado
+            )
+            ExposedDropdownMenu(expanded = expandidoBajos, onDismissRequest = { expandidoBajos = false }) {
+                listOf("Bajo", "Medio", "Alto").forEach { nivel ->
+                    DropdownMenuItem(text = { Text(nivel) }, onClick = {
+                        nivelBajos = nivel
+                        expandidoBajos = false
+                        prefs.guardarString(PreferenciasApp.KEY_NIVEL_BAJOS, nivel)
+                        GestorAudio.actualizarEstado(audioPremiumActivado, contexto)
+                    })
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
         HorizontalDivider()

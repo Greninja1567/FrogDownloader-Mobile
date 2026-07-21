@@ -32,5 +32,7 @@ class PreferenciasApp(contexto: Context) {
         const val KEY_RUTA_VIDEO = "ruta_video"
         const val KEY_ANDROID_AUTO = "android_auto"
         const val KEY_TEMA_APP = "tema_app"
+        const val KEY_AUDIO_PREMIUM = "audio_premium"
+        const val KEY_NIVEL_BAJOS = "nivel_bajos"
     }
 }
