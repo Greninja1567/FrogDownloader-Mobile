@@ -487,7 +487,7 @@ object GestorReproduccion {
                 val urlLimpia = videoSeleccionado.urlOriginalVideo.trim()
                 val request = YoutubeDLRequest(urlLimpia)
                 // --- OPTIMIZACIÓN DE CARGA EXTREMA (MODO TURBO) ---
-                request.addOption("--extractor-args", "youtube:player_client=ios,web")
+                request.addOption("--extractor-args", "youtube:player_client=android,mweb,ios,web;player_skip=webpage,configs")
                 request.addOption("--no-check-formats")
                 request.addOption("--youtube-skip-dash-manifest")
                 request.addOption("--youtube-skip-hls-manifest")
@@ -578,7 +578,7 @@ fun PantallaVideo(esTablet: Boolean = false) {
             try {
                 val request = YoutubeDLRequest(url)
                 // --- OPTIMIZACIÓN DE CARGA EXTREMA DE LISTAS ---
-                request.addOption("--extractor-args", "youtube:player_client=ios,web")
+                request.addOption("--extractor-args", "youtube:player_client=android,mweb,ios,web;player_skip=webpage,configs")
                 request.addOption("--flat-playlist")
                 request.addOption("--dump-single-json")
                 request.addOption("--no-check-certificate")
@@ -1584,6 +1584,70 @@ fun PantallaConfiguraciones() {
         Text("Soporte y Actualizaciones", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
         Spacer(modifier = Modifier.height(12.dp))
 
+        // BOTÓN C: ACTUALIZAR APP DESDE GIT
+        var buscandoAppUpdate by remember { mutableStateOf(false) }
+        var releaseInfo by remember { mutableStateOf<ActualizadorApp.ReleaseInfo?>(null) }
+        var mostrarDialogoUpdate by remember { mutableStateOf(false) }
+
+        Button(
+            onClick = {
+                buscandoAppUpdate = true
+                ActualizadorApp.buscarActualizacion(contexto) { info ->
+                    buscandoAppUpdate = false
+                    if (info != null) {
+                        releaseInfo = info
+                        mostrarDialogoUpdate = true
+                    } else {
+                        (contexto as? Activity)?.runOnUiThread {
+                            Toast.makeText(contexto, "Estás actualizado a la última versión", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            },
+            enabled = !buscandoAppUpdate,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+        ) {
+            if (buscandoAppUpdate) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Buscando...")
+            } else {
+                Text("Buscar Actualizaciones de FrogDownloader")
+            }
+        }
+
+        if (mostrarDialogoUpdate && releaseInfo != null) {
+            AlertDialog(
+                onDismissRequest = { mostrarDialogoUpdate = false },
+                title = { Text("¡Nueva Versión Disponible! (${releaseInfo!!.version})") },
+                text = {
+                    Column {
+                        Text("Se ha encontrado una nueva actualización en GitHub.")
+                        if (releaseInfo!!.body.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(releaseInfo!!.body, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        mostrarDialogoUpdate = false
+                        ActualizadorApp.descargarEInstalar(contexto, releaseInfo!!.downloadUrl)
+                    }) {
+                        Text("Actualizar Ahora")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { mostrarDialogoUpdate = false }) {
+                        Text("Más tarde")
+                    }
+                }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         // BOTÓN A: ACTUALIZAR MOTOR DE DESCARGAS
         var textoBotonActualizar by remember { mutableStateOf("Actualizar Motor de Descargas") }
         var cargandoActualizacion by remember { mutableStateOf(false) }
@@ -1843,7 +1907,7 @@ fun iniciarDescarga(url: String, contexto: android.content.Context, descargarTod
                 // 1. Obtenemos rápido la lista plana de IDs de la playlist usando execute (VideoInfo no tiene 'entries')
                 val reqPlaylist = YoutubeDLRequest(url)
                 // --- SOLUCIÓN ERROR ATTESTATION (adaq) ---
-                reqPlaylist.addOption("--extractor-args", "youtube:player_client=ios,web")
+                reqPlaylist.addOption("--extractor-args", "youtube:player_client=android,mweb,ios,web;player_skip=webpage,configs")
                 // ------------------------------------------
                 reqPlaylist.addOption("--flat-playlist")
                 reqPlaylist.addOption("--yes-playlist")
@@ -1877,7 +1941,7 @@ fun iniciarDescarga(url: String, contexto: android.content.Context, descargarTod
                                 val urlIndividual = if (idVideo.contains("http")) idVideo else "https://www.youtube.com/watch?v=$idVideo"
                                 val requestIndividual = YoutubeDLRequest(urlIndividual)
                                 // --- SOLUCIÓN ERROR ATTESTATION (adaq) ---
-                                requestIndividual.addOption("--extractor-args", "youtube:player_client=ios,web")
+                                requestIndividual.addOption("--extractor-args", "youtube:player_client=android,mweb,ios,web;player_skip=webpage,configs")
                                 // ------------------------------------------
 
                                 // Configuramos formato individual
@@ -1888,7 +1952,6 @@ fun iniciarDescarga(url: String, contexto: android.content.Context, descargarTod
                                     requestIndividual.addOption("--extract-audio")
                                     requestIndividual.addOption("--audio-format", formatoAudioGlobal)
                                     requestIndividual.addOption("--audio-quality", calidadAudioGlobal.replace("k", ""))
-                                    requestIndividual.addOption("--extractor-args", "youtube:player_client=ios,web")
                                     requestIndividual.addOption("--no-check-certificates")
                                     // Dejamos que youtube-dl ponga la extensión correcta según el formato solicitado
                                     requestIndividual.addOption("-o", "${rutaDestino.absolutePath}/%(title)s.%(ext)s")
@@ -1896,7 +1959,6 @@ fun iniciarDescarga(url: String, contexto: android.content.Context, descargarTod
                                     val alturaVideo = calidadVideoGlobal.replace("p", "")
                                     requestIndividual.addOption("-f", "bestvideo[height<=$alturaVideo]+bestaudio/best[height<=$alturaVideo]/best")
                                     requestIndividual.addOption("--merge-output-format", formatoVideoGlobal)
-                                    requestIndividual.addOption("--extractor-args", "youtube:player_client=ios,web")
                                     requestIndividual.addOption("--no-check-certificates")
                                     requestIndividual.addOption("-o", "${rutaDestino.absolutePath}/%(title)s.%(ext)s")
                                 }
@@ -1921,7 +1983,7 @@ fun iniciarDescarga(url: String, contexto: android.content.Context, descargarTod
                 // ====================================================================
                 val requestInfo = YoutubeDLRequest(url)
                 // --- SOLUCIÓN ERROR ATTESTATION (adaq) ---
-                requestInfo.addOption("--extractor-args", "youtube:player_client=ios,web")
+                requestInfo.addOption("--extractor-args", "youtube:player_client=android,mweb,ios,web;player_skip=webpage,configs")
                 // ------------------------------------------
                 val streamInfo = YoutubeDL.getInstance().getInfo(requestInfo)
 
@@ -1929,7 +1991,7 @@ fun iniciarDescarga(url: String, contexto: android.content.Context, descargarTod
                 val requestUnico = YoutubeDLRequest(url)
                 requestUnico.addOption("--no-mtime")
                 // --- SOLUCIÓN ERROR ATTESTATION (adaq) ---
-                requestUnico.addOption("--extractor-args", "youtube:player_client=ios,web")
+                requestUnico.addOption("--extractor-args", "youtube:player_client=android,mweb,ios,web;player_skip=webpage,configs")
                 // ------------------------------------------
                 requestUnico.addOption("--no-playlist")
 
