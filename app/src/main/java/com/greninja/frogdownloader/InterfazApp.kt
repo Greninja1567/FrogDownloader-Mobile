@@ -37,6 +37,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
@@ -75,6 +76,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -160,9 +162,28 @@ val ColorGrisTexto = Color(0xFFB0B0B0)
 
 // --- COLORES TEMA GLASS iOS ---
 val ColorGlassVerdePrimario = Color(0xFF2ECC71) // Verde esmeralda iOS
-val ColorGlassBlancoTransp = Color(0xB3FFFFFF)  // Blanco con 70% opacidad
-val ColorGlassVerdeTransp = Color(0x99E8F5E9)   // Verde muy claro con 60% opacidad
-val ColorGlassBorde = Color(0x4DFFFFFF)        // Borde blanco sutil
+val ColorGlassBlancoTransp = Color(0x66FFFFFF)  // Blanco con 40% opacidad (más glass)
+val ColorGlassVerdeTransp = Color(0x80E8F5E9)   // Verde muy claro con 50% opacidad
+val ColorGlassBorde = Color(0x80FFFFFF)        // Borde blanco más nítido
+
+// --- EXTENSIÓN PARA GLASSMORFISMO ---
+fun Modifier.glass(
+    enabled: Boolean,
+    shape: androidx.compose.ui.graphics.Shape = androidx.compose.foundation.shape.RoundedCornerShape(32.dp),
+    opacity: Float = 0.15f,
+    esOscuro: Boolean = false
+): Modifier = if (enabled) {
+    val colorBase = if (esOscuro) Color.Black else Color.White
+    val colorBorde = if (esOscuro) Color.White.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.3f)
+    this.then(
+        Modifier
+            .clip(shape)
+            .background(colorBase.copy(alpha = opacity))
+            .border(0.5.dp, colorBorde, shape)
+    )
+} else {
+    this
+}
 
 // Función auxiliar para formatear milisegundos a MM:SS
 fun formatTime(ms: Long): String {
@@ -174,6 +195,7 @@ fun formatTime(ms: Long): String {
 
 enum class ModoTema { CLARO, OSCURO, AUTOMATICO, CRISTAL_IOS }
 var temaAppGlobal by mutableStateOf(ModoTema.AUTOMATICO)
+var appEnPrimerPlanoGlobal by mutableStateOf(true)
 
 // --- VARIABLE GLOBAL PARA DETENER DESCARGAS MASIVAS ---
 var detenerDescargaMasivaGlobal by mutableStateOf(false)
@@ -198,6 +220,17 @@ var mostrarBottomSheetGlobal by mutableStateOf(false)
 var esPlaylistDetectadaGlobal by mutableStateOf(false)
 var urlParaDescargarGlobal by mutableStateOf("")
 var cargandoVideoGlobal by mutableStateOf(false)
+var cargandoPlaylistGlobal by mutableStateOf(false)
+
+@Composable
+fun esModoOscuroActivo(): Boolean {
+    return when (temaAppGlobal) {
+        ModoTema.CLARO -> false
+        ModoTema.OSCURO -> true
+        ModoTema.AUTOMATICO -> isSystemInDarkTheme()
+        ModoTema.CRISTAL_IOS -> isSystemInDarkTheme()
+    }
+}
 
 val EsquemaColoresVerde = lightColorScheme(
     primary = ColorVerdeBase,
@@ -229,13 +262,19 @@ val EsquemaColoresGlass = lightColorScheme(
     primary = ColorGlassVerdePrimario,
     secondary = ColorGlassVerdePrimario.copy(alpha = 0.8f),
     background = Color.Transparent,
-    surface = ColorGlassBlancoTransp,
+    surface = Color.White.copy(alpha = 0.3f),
     onPrimary = Color.White,
     onSecondary = Color.White,
-    onBackground = Color.Black,
-    onSurface = Color.Black,
-    primaryContainer = ColorGlassVerdePrimario.copy(alpha = 0.2f),
-    secondaryContainer = ColorGlassVerdeTransp
+    onBackground = Color.White,
+    onSurface = Color.White,
+    onSurfaceVariant = Color.White.copy(alpha = 0.7f),
+    primaryContainer = ColorGlassVerdePrimario.copy(alpha = 0.3f),
+    onPrimaryContainer = Color.White,
+    secondaryContainer = Color.White.copy(alpha = 0.2f),
+    onSecondaryContainer = Color.White,
+    surfaceVariant = Color.White.copy(alpha = 0.15f),
+    outline = Color.White.copy(alpha = 0.5f),
+    outlineVariant = Color.White.copy(alpha = 0.2f)
 )
 
 // Clase para almacenar la información completa del archivo
@@ -411,8 +450,6 @@ enum class Pantallas(val ruta: String, val titulo: String, val icono: ImageVecto
 
 // --- VARIABLE GLOBAL PARA HACER QUE EL BOTÓN FLOTANTE SEPA QUÉ LINK DESCARGAR ---
 var urlActualParaDescargarGlobal by mutableStateOf("")
-// --- NUEVA VARIABLE GLOBAL PARA EL LINK COMPARTIDO ---
-var urlCompartidaDesdeYoutubeGlobal by mutableStateOf("")
 
 @Composable
 fun InterfazPrincipal(windowSizeClass: WindowSizeClass) {
@@ -437,12 +474,7 @@ fun InterfazPrincipal(windowSizeClass: WindowSizeClass) {
         temaAppGlobal = try { ModoTema.valueOf(temaGuardado) } catch (e: Exception) { ModoTema.AUTOMATICO }
     }
 
-    val esOscuro = when (temaAppGlobal) {
-        ModoTema.CLARO -> false
-        ModoTema.OSCURO -> true
-        ModoTema.AUTOMATICO -> isSystemInDarkTheme()
-        ModoTema.CRISTAL_IOS -> false // Cristal iOS es un tema claro con transparencias
-    }
+    val esOscuro = esModoOscuroActivo()
 
     val colorSchemeActual = when (temaAppGlobal) {
         ModoTema.CRISTAL_IOS -> EsquemaColoresGlass
@@ -458,9 +490,17 @@ fun InterfazPrincipal(windowSizeClass: WindowSizeClass) {
                 // REEMPLAZA "fondo_drive" por el nombre exacto que le pusiste a tu imagen en drawable
                 painter = painterResource(id = contexto.resources.getIdentifier("fondo_app", "drawable", contexto.packageName)),
                 contentDescription = "Fondo de pantalla",
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (temaAppGlobal == ModoTema.CRISTAL_IOS && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            Modifier.blur(20.dp)
+                        } else {
+                            Modifier
+                        }
+                    ),
                 contentScale = ContentScale.Crop, // Fuerza a la imagen a cubrir toda la pantalla sin deformarse
-                colorFilter = if (esOscuro) ColorFilter.tint(Color.Black.copy(alpha = 0.5f), BlendMode.Darken) else null
+                colorFilter = if (esOscuro) ColorFilter.tint(Color.Black.copy(alpha = 0.75f), BlendMode.Darken) else null
             )
 
             // 3. El contenedor visual flota de forma transparente sobre la imagen
@@ -468,7 +508,8 @@ fun InterfazPrincipal(windowSizeClass: WindowSizeClass) {
                 if (esTablet) {
                     // BARRA LATERAL PARA TABLETS
                     NavigationRail(
-                        containerColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.colorScheme.surface.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                        containerColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                        modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.padding(8.dp).glass(true, esOscuro = esOscuro) else Modifier,
                         header = {
                             Image(
                                 painter = painterResource(id = R.drawable.icono),
@@ -503,22 +544,27 @@ fun InterfazPrincipal(windowSizeClass: WindowSizeClass) {
                 }
 
                 Scaffold(
+                    modifier = Modifier.fillMaxSize(),
                     containerColor = Color.Transparent, // Obliga al Scaffold a ser transparente
                     bottomBar = {
                         if (!esTablet) {
                             NavigationBar(
                                 // Barra inferior ligeramente translúcida para combinar con el fondo
-                                containerColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.colorScheme.surface.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                                containerColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.05f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                                modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.padding(horizontal = 24.dp, vertical = 12.dp).glass(true, shape = CircleShape, opacity = 0.1f, esOscuro = esOscuro) else Modifier
                             ) {
                                 Pantallas.entries.forEach { pantalla ->
+                                    val seleccionada = pantallaActual == pantalla
                                     NavigationBarItem(
-                                        icon = { Icon(pantalla.icono, contentDescription = pantalla.titulo) },
-                                        label = { Text(pantalla.titulo) },
-                                        selected = pantallaActual == pantalla,
+                                        icon = { Icon(pantalla.icono, contentDescription = pantalla.titulo, modifier = Modifier.size(28.dp)) },
+                                        label = { Text(pantalla.titulo, fontWeight = if (seleccionada) FontWeight.Bold else FontWeight.Normal) },
+                                        selected = seleccionada,
                                         colors = NavigationBarItemDefaults.colors(
-                                            selectedIconColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.primary,
-                                            unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                            indicatorColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario.copy(alpha = 0.5f) else MaterialTheme.colorScheme.secondary
+                                            selectedIconColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else MaterialTheme.colorScheme.primary,
+                                            unselectedIconColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                            indicatorColor = Color.Transparent,
+                                            selectedTextColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else MaterialTheme.colorScheme.primary,
+                                            unselectedTextColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                         ),
                                         onClick = {
                                             if (pantallaActual != pantalla) {
@@ -536,12 +582,14 @@ fun InterfazPrincipal(windowSizeClass: WindowSizeClass) {
                         }
                     },
                     floatingActionButton = {
-                        if (pantallaActual == Pantallas.Video && urlActualParaDescargarGlobal.isNotEmpty()) {
+                        val urlADescargar = if (urlActualParaDescargarGlobal.isNotEmpty()) urlActualParaDescargarGlobal else urlParaDescargarIndividualGlobal
+                        
+                        if (pantallaActual == Pantallas.Video && urlADescargar.isNotEmpty()) {
                             // BOTÓN FLOTANTE LIMÓN CON ÍCONO GRIS OSCURO
                             FloatingActionButton(
                                 onClick = {
-                                    esPlaylistDetectadaGlobal = urlActualParaDescargarGlobal.contains("playlist") || urlActualParaDescargarGlobal.contains("&list=")
-                                    urlParaDescargarGlobal = urlActualParaDescargarGlobal
+                                    esPlaylistDetectadaGlobal = urlADescargar.contains("playlist") || urlADescargar.contains("&list=")
+                                    urlParaDescargarGlobal = urlADescargar
                                     mostrarBottomSheetGlobal = true
                                 },
                                 containerColor = ColorLimon, // Color limón solicitado
@@ -574,6 +622,84 @@ val videosPlaylistGlobal = mutableStateListOf<VideoPlaylistItem>()
 var indiceActualVideoGlobal by mutableStateOf(-1)
 
 object GestorReproduccion {
+    fun procesarCarga(url: String, reemplazar: Boolean, contexto: Context) {
+        val appContext = contexto.applicationContext
+        cargandoPlaylistGlobal = true
+        val playlistItems = videosPlaylistGlobal
+        val exoPlayer = MainApp.exoPlayerGlobal ?: return
+
+        // --- MANTENER PROCESO VIVO: INICIAR SERVICIO INMEDIATAMENTE ---
+        try {
+            val serviceIntent = Intent(appContext, PlaybackService::class.java)
+            ContextCompat.startForegroundService(appContext, serviceIntent)
+        } catch (e: Exception) { e.printStackTrace() }
+
+        if (reemplazar) {
+            playlistItems.clear()
+            exoPlayer.clearMediaItems()
+            indiceActualVideoGlobal = -1
+            PlaybackService.actualizarListaEnAuto()
+        }
+
+        thread {
+            try {
+                val request = YoutubeDLRequest(url)
+                // --- OPTIMIZACIÓN DE CARGA EXTREMA DE LISTAS ---
+                request.addOption("--extractor-args", "youtube:player_client=android,mweb,ios,web;player_skip=webpage,configs")
+                request.addOption("--flat-playlist")
+                request.addOption("--dump-single-json")
+                request.addOption("--no-check-certificate")
+                request.addOption("--no-warnings")
+                request.addOption("--yes-playlist")
+                request.addOption("--ignore-config")
+                request.addOption("--no-check-formats")
+                request.addOption("--playlist-items", "1-25") // Reducido a 25 para velocidad instantánea
+
+                // Ejecución manual para obtener el JSON completo
+                val response = YoutubeDL.getInstance().execute(request)
+                val json = JSONObject(response.out)
+
+                ContextCompat.getMainExecutor(appContext).execute {
+                    val nuevasEntradas = mutableListOf<VideoPlaylistItem>()
+                    val entriesJson = json.optJSONArray("entries")
+                    if (entriesJson != null && entriesJson.length() > 0) {
+                        for (i in 0 until entriesJson.length()) {
+                            val video = entriesJson.getJSONObject(i)
+                            val titulo = video.optString("title", "Video ${i + 1}")
+                            val idVideo = video.optString("id", video.optString("url", ""))
+                            if (idVideo.isNotEmpty()) {
+                                val urlIndividual = if (idVideo.startsWith("http")) idVideo else "https://www.youtube.com/watch?v=$idVideo"
+                                nuevasEntradas.add(VideoPlaylistItem(titulo, urlIndividual))
+                            }
+                        }
+                    } else {
+                        val titulo = json.optString("title", "Video")
+                        val idVideo = json.optString("id", json.optString("webpage_url", ""))
+                        if (idVideo.isNotEmpty()) {
+                            val urlIndividual = if (idVideo.startsWith("http")) idVideo else "https://www.youtube.com/watch?v=$idVideo"
+                            nuevasEntradas.add(VideoPlaylistItem(titulo, urlIndividual))
+                        }
+                    }
+
+                    val indiceParaEmpezar = playlistItems.size
+                    playlistItems.addAll(nuevasEntradas)
+
+                    if (reemplazar && playlistItems.isNotEmpty()) {
+                        cargarYReproducirIndice(0, appContext)
+                    } else if (!reemplazar && indiceActualVideoGlobal == -1 && playlistItems.isNotEmpty()) {
+                        cargarYReproducirIndice(indiceParaEmpezar, appContext)
+                    }
+
+                    cargandoPlaylistGlobal = false
+                    PlaybackService.actualizarListaEnAuto()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                ContextCompat.getMainExecutor(appContext).execute { cargandoPlaylistGlobal = false }
+            }
+        }
+    }
+
     fun cargarYReproducirIndice(index: Int, contexto: Context) {
         val playlistItems = videosPlaylistGlobal
         if (index < 0 || index >= playlistItems.size) return
@@ -584,6 +710,8 @@ object GestorReproduccion {
 
         tituloVideoActualGlobal = videoSeleccionado.titulo
         urlParaDescargarIndividualGlobal = videoSeleccionado.urlOriginalVideo.trim()
+        // Sincronizamos también la global de descarga para que el botón aparezca
+        urlActualParaDescargarGlobal = videoSeleccionado.urlOriginalVideo.trim()
 
         thread {
             try {
@@ -598,20 +726,32 @@ object GestorReproduccion {
                 request.addOption("--no-warnings")
                 request.addOption("--no-playlist")
                 request.addOption("--ignore-config")
-                request.addOption("--no-call-home")
                 request.addOption("--socket-timeout", "5")
                 
                 // Forzamos la obtención directa del link sin procesar metadatos pesados
                 request.addOption("--get-url")
                 
                 val alturaMapeada = resolucionReproduccionGlobal.replace("p", "")
-                // PRIORIDAD: Opus 251 (Mejor audio) + Video en resolución elegida
-                request.addOption("-f", "bestvideo[height<=$alturaMapeada]+251/bestvideo[height<=$alturaMapeada]+bestaudio/best[height<=$alturaMapeada]/best")
+                
+                // --- OPTIMIZACIÓN TURBO: SI NO ESTAMOS EN APP, SOLO PEDIMOS AUDIO (MUCHO MÁS RÁPIDO) ---
+                if (appEnPrimerPlanoGlobal) {
+                    // PRIORIDAD: Opus 251 (Mejor audio) + Video en resolución elegida
+                    request.addOption("-f", "bestvideo[height<=$alturaMapeada]+251/bestvideo[height<=$alturaMapeada]+bestaudio/best[height<=$alturaMapeada]/best")
+                } else {
+                    // SOLO AUDIO: Mucho más rápido de cargar y obtener link
+                    request.addOption("-f", "251/bestaudio/best")
+                }
 
                 val response = YoutubeDL.getInstance().execute(request)
                 val linkStreamingReal = response.out.split("\n").firstOrNull { it.startsWith("http") } ?: return@thread
 
                 ContextCompat.getMainExecutor(contexto).execute {
+                    // Asegurar que el servicio esté encendido para reproducción en background
+                    try {
+                        val serviceIntent = Intent(contexto.applicationContext, PlaybackService::class.java)
+                        ContextCompat.startForegroundService(contexto.applicationContext, serviceIntent)
+                    } catch (e: Exception) { e.printStackTrace() }
+
                     val exoPlayer = MainApp.exoPlayerGlobal ?: return@execute
                     
                     // OPTIMIZACIÓN: User Agent más compatible con los clientes de streaming (iOS/Android)
@@ -626,6 +766,7 @@ object GestorReproduccion {
                     val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
                     val metadata = MediaMetadata.Builder()
                         .setTitle(videoSeleccionado.titulo)
+                        .setArtist("YouTube")
                         .setArtworkUri(Uri.parse("android.resource://${contexto.packageName}/drawable/icono"))
                         .build()
                     val mediaItem = MediaItem.Builder()
@@ -654,11 +795,11 @@ object GestorReproduccion {
 @Composable
 fun PantallaVideo(esTablet: Boolean = false) {
     val contexto = LocalContext.current
+    val esOscuro = esModoOscuroActivo()
     val actividad = contexto as? Activity
     var urlTexto by remember { mutableStateOf("") }
 
     val playlistItems = videosPlaylistGlobal
-    var cargandoPlaylist by remember { mutableStateOf(false) }
     var esPantallaCompleta by remember { mutableStateOf(false) }
 
     // Estado local para pintar el título del video que está sonando actualmente
@@ -691,75 +832,6 @@ fun PantallaVideo(esTablet: Boolean = false) {
         }
     }
 
-    val procesarCarga = { url: String, reemplazar: Boolean ->
-        cargandoPlaylist = true
-        if (reemplazar) {
-            playlistItems.clear()
-            exoPlayer.clearMediaItems()
-            indiceActualVideoGlobal = -1
-            PlaybackService.actualizarListaEnAuto()
-        }
-
-        thread {
-            try {
-                val request = YoutubeDLRequest(url)
-                // --- OPTIMIZACIÓN DE CARGA EXTREMA DE LISTAS ---
-                request.addOption("--extractor-args", "youtube:player_client=android,mweb,ios,web;player_skip=webpage,configs")
-                request.addOption("--flat-playlist")
-                request.addOption("--dump-single-json")
-                request.addOption("--no-check-certificate")
-                request.addOption("--no-warnings")
-                request.addOption("--yes-playlist")
-                request.addOption("--ignore-config")
-                request.addOption("--no-call-home")
-                request.addOption("--no-check-formats")
-                request.addOption("--playlist-items", "1-25") // Reducido a 25 para velocidad instantánea
-
-                // Ejecución manual para obtener el JSON completo
-                val response = YoutubeDL.getInstance().execute(request)
-                val json = JSONObject(response.out)
-
-                ContextCompat.getMainExecutor(contexto).execute {
-                    val nuevasEntradas = mutableListOf<VideoPlaylistItem>()
-                    val entriesJson = json.optJSONArray("entries")
-                    if (entriesJson != null && entriesJson.length() > 0) {
-                        for (i in 0 until entriesJson.length()) {
-                            val video = entriesJson.getJSONObject(i)
-                            val titulo = video.optString("title", "Video ${i + 1}")
-                            val idVideo = video.optString("id", video.optString("url", ""))
-                            if (idVideo.isNotEmpty()) {
-                                val urlIndividual = if (idVideo.startsWith("http")) idVideo else "https://www.youtube.com/watch?v=$idVideo"
-                                nuevasEntradas.add(VideoPlaylistItem(titulo, urlIndividual))
-                            }
-                        }
-                    } else {
-                        val titulo = json.optString("title", "Video")
-                        val idVideo = json.optString("id", json.optString("webpage_url", ""))
-                        if (idVideo.isNotEmpty()) {
-                            val urlIndividual = if (idVideo.startsWith("http")) idVideo else "https://www.youtube.com/watch?v=$idVideo"
-                            nuevasEntradas.add(VideoPlaylistItem(titulo, urlIndividual))
-                        }
-                    }
-
-                    val indiceParaEmpezar = playlistItems.size
-                    playlistItems.addAll(nuevasEntradas)
-
-                    if (reemplazar && playlistItems.isNotEmpty()) {
-                        GestorReproduccion.cargarYReproducirIndice(0, contexto)
-                    } else if (!reemplazar && indiceActualVideoGlobal == -1 && playlistItems.isNotEmpty()) {
-                        GestorReproduccion.cargarYReproducirIndice(indiceParaEmpezar, contexto)
-                    }
-
-                    cargandoPlaylist = false
-                    PlaybackService.actualizarListaEnAuto()
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                ContextCompat.getMainExecutor(contexto).execute { cargandoPlaylist = false }
-            }
-        }
-    }
-
     // --- FUNCIÓN PARA ACCIONAR LA BÚSQUEDA ---
     val accionarBusqueda = { url: String ->
         if (url.isNotEmpty()) {
@@ -767,23 +839,17 @@ fun PantallaVideo(esTablet: Boolean = false) {
                 urlPendiente = url
                 mostrarDialogoOpcionesCola = true
             } else {
-                procesarCarga(url, true)
+                GestorReproduccion.procesarCarga(url, true, contexto)
             }
         }
     }
 
-    // --- ESCUCHAR SI LLEGA UN LINK COMPARTIDO ---
-    LaunchedEffect(urlCompartidaDesdeYoutubeGlobal) {
-        if (urlCompartidaDesdeYoutubeGlobal.isNotEmpty()) {
-            urlTexto = urlCompartidaDesdeYoutubeGlobal
-            urlActualParaDescargarGlobal = urlCompartidaDesdeYoutubeGlobal
-            accionarBusqueda(urlCompartidaDesdeYoutubeGlobal)
-            // Limpiar para no repetir si se rota la pantalla
-            urlCompartidaDesdeYoutubeGlobal = ""
-        }
-    }
-
     LaunchedEffect(exoPlayer) {
+        // Sincronización inmediata: si el reproductor ya está listo, quitamos la leyenda "Descifrando"
+        if (exoPlayer.playbackState == androidx.media3.common.Player.STATE_READY) {
+            cargandoVideoGlobal = false
+        }
+        
         exoPlayer.addListener(object : androidx.media3.common.Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == androidx.media3.common.Player.STATE_ENDED) {
@@ -945,28 +1011,32 @@ fun PantallaVideo(esTablet: Boolean = false) {
                 TopAppBar(
                     title = {
                         Row(
-                            verticalAlignment = Alignment.CenterVertically
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
                         ) {
                             // 1. DIBUJAMOS TU LOGO
                             Image(
                                 painter = painterResource(id = R.drawable.icono),
                                 contentDescription = "Logo de la app",
                                 modifier = Modifier
-                                    .size(55.dp)
+                                    .size(45.dp)
                                     .padding(end = 8.dp)
                             )
 
                             // 2. TEXTO DEL NOMBRE DE TU APP
                             Text(
-                                text = "FrogDownloader Pro",
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                                style = MaterialTheme.typography.titleLarge
+                                text = "FrogDownloader",
+                                color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.colorScheme.surface.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
-                    )
+                        containerColor = Color.Transparent
+                    ),
+                    modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.padding(top = 8.dp) else Modifier
                 )
             }
 
@@ -975,19 +1045,30 @@ fun PantallaVideo(esTablet: Boolean = false) {
                 Row(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                     // Columna Izquierda: Input y Reproductor
                     Column(modifier = Modifier.weight(1.2f)) {
+                        val colorTexto = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
+                        
                         OutlinedTextField(
                             value = urlTexto,
                             onValueChange = {
                                 urlTexto = it
                                 urlActualParaDescargarGlobal = it
                             },
-                            label = { Text("Pegar Link de YouTube") },
-                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text("Pegar Link de YouTube", color = colorTexto.copy(alpha = 0.6f)) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .glass(temaAppGlobal == ModoTema.CRISTAL_IOS, shape = CircleShape, opacity = 0.1f, esOscuro = esOscuro),
                             singleLine = true,
-                            shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else OutlinedTextFieldDefaults.shape,
+                            shape = CircleShape,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline,
+                                focusedTextColor = colorTexto,
+                                unfocusedTextColor = colorTexto,
+                                cursorColor = colorTexto
+                            ),
                             trailingIcon = {
                                 IconButton(onClick = { accionarBusqueda(urlTexto) }) {
-                                    Icon(Icons.Default.ArrowForward, contentDescription = "Ver")
+                                    Icon(Icons.Default.ArrowForward, contentDescription = "Ver", tint = colorTexto)
                                 }
                             }
                         )
@@ -996,7 +1077,7 @@ fun PantallaVideo(esTablet: Boolean = false) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(350.dp)
-                                .then(if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.border(0.5.dp, ColorGlassBorde, MaterialTheme.shapes.extraLarge) else Modifier),
+                                .glass(temaAppGlobal == ModoTema.CRISTAL_IOS, shape = MaterialTheme.shapes.extraLarge, esOscuro = esOscuro),
                             shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else MaterialTheme.shapes.medium
                         ) { componenteReproductor() }
                         Spacer(modifier = Modifier.height(16.dp))
@@ -1010,25 +1091,36 @@ fun PantallaVideo(esTablet: Boolean = false) {
                         ControlesPlaylist(contexto)
                         Spacer(modifier = Modifier.height(8.dp))
                         Text("Lista de Reproducción", style = MaterialTheme.typography.titleMedium)
-                        ListaVideosPlaylist(cargandoPlaylist, playlistItems, contexto)
+                        ListaVideosPlaylist(cargandoPlaylistGlobal, playlistItems, contexto)
                     }
                 }
             } else {
                 // DISEÑO MÓVIL ORIGINAL
                 Column(modifier = Modifier.padding(16.dp)) {
+                    val colorTexto = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
+                    
                     OutlinedTextField(
                         value = urlTexto,
                         onValueChange = {
                             urlTexto = it
                             urlActualParaDescargarGlobal = it
                         },
-                        label = { Text("Pegar Link de YouTube") },
-                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Pegar Link de YouTube", color = colorTexto.copy(alpha = 0.6f)) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .glass(temaAppGlobal == ModoTema.CRISTAL_IOS, shape = CircleShape, opacity = 0.1f, esOscuro = esOscuro),
                         singleLine = true,
-                        shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else OutlinedTextFieldDefaults.shape,
+                        shape = CircleShape,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline,
+                            focusedTextColor = colorTexto,
+                            unfocusedTextColor = colorTexto,
+                            cursorColor = colorTexto
+                        ),
                         trailingIcon = {
                             IconButton(onClick = { accionarBusqueda(urlTexto) }) {
-                                Icon(Icons.Default.ArrowForward, contentDescription = "Ver")
+                                Icon(Icons.Default.ArrowForward, contentDescription = "Ver", tint = colorTexto)
                             }
                         }
                     )
@@ -1037,41 +1129,47 @@ fun PantallaVideo(esTablet: Boolean = false) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(200.dp)
-                            .then(if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.border(0.5.dp, ColorGlassBorde, MaterialTheme.shapes.extraLarge) else Modifier),
+                            .glass(temaAppGlobal == ModoTema.CRISTAL_IOS, shape = MaterialTheme.shapes.extraLarge, esOscuro = esOscuro),
                         shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else MaterialTheme.shapes.medium
                     ) { componenteReproductor() }
                     Spacer(modifier = Modifier.height(16.dp))
                     InfoVideoActual()
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(20.dp))
                     ControlesPlaylist(contexto)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Contenido de la Lista de Reproducción", 
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
-                    HorizontalDivider()
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Contenido de la Lista de Reproducción", style = MaterialTheme.typography.titleMedium)
-                    ListaVideosPlaylist(cargandoPlaylist, playlistItems, contexto)
+                    ListaVideosPlaylist(cargandoPlaylistGlobal, playlistItems, contexto)
                 }
             }
         }
     }
     if (mostrarDialogoOpcionesCola) {
+        val colorTexto = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
         AlertDialog(
             onDismissRequest = { mostrarDialogoOpcionesCola = false },
-            title = { Text("Contenido Detectado") },
-            text = { Text("¿Qué deseas hacer con el nuevo contenido?") },
+            containerColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) (if (esOscuro) Color.Black.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.9f)) else MaterialTheme.colorScheme.surface,
+            modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.extraLarge) else Modifier,
+            title = { Text("Contenido Detectado", color = colorTexto) },
+            text = { Text("¿Qué deseas hacer con el nuevo contenido?", color = colorTexto.copy(alpha = 0.8f)) },
             confirmButton = {
                 TextButton(onClick = {
                     mostrarDialogoOpcionesCola = false
-                    procesarCarga(urlPendiente, true)
+                    GestorReproduccion.procesarCarga(urlPendiente, true, contexto)
                 }) {
-                    Text("Reproducir Ahora")
+                    Text("Reproducir Ahora", color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else MaterialTheme.colorScheme.primary)
                 }
             },
             dismissButton = {
                 TextButton(onClick = {
                     mostrarDialogoOpcionesCola = false
-                    procesarCarga(urlPendiente, false)
+                    GestorReproduccion.procesarCarga(urlPendiente, false, contexto)
                 }) {
-                    Text("Agregar a la fila")
+                    Text("Agregar a la fila", color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.7f) else Color.Unspecified)
                 }
             }
         )
@@ -1080,22 +1178,25 @@ fun PantallaVideo(esTablet: Boolean = false) {
     if (mostrarBottomSheetGlobal) {
         ModalBottomSheet(
             onDismissRequest = { mostrarBottomSheetGlobal = false },
-            sheetState = sheetState
+            sheetState = sheetState,
+            containerColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) (if (esOscuro) Color.Black.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.95f)) else MaterialTheme.colorScheme.surface,
+            scrimColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.Black.copy(alpha = 0.4f) else Color.Black.copy(alpha = 0.32f)
         ) {
+            val colorTexto = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp),
+                    .padding(bottom = 32.dp, start = 24.dp, end = 24.dp, top = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("Opciones de Descarga", style = MaterialTheme.typography.titleLarge)
+                Text("Opciones de Descarga", style = MaterialTheme.typography.titleLarge, color = colorTexto)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = if (esPlaylistDetectadaGlobal) "Se detectó una Lista de Reproducción activa" else "Enlace individual detectado",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = colorTexto.copy(alpha = 0.7f)
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
                 // APARTADO 1: CHIPS SELECCIONABLES DE AUDIO O VIDEO
                 Row(
@@ -1105,18 +1206,40 @@ fun PantallaVideo(esTablet: Boolean = false) {
                     FilterChip(
                         selected = !formatoSoloAudioGlobal,
                         onClick = { formatoSoloAudioGlobal = false },
-                        label = { Text("Video (${formatoVideoGlobal.uppercase()})") }
+                        label = { Text("Video (${formatoVideoGlobal.uppercase()})") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onPrimaryContainer,
+                            labelColor = colorTexto.copy(alpha = 0.7f)
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = !formatoSoloAudioGlobal,
+                            borderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.2f) else MaterialTheme.colorScheme.outline,
+                            selectedBorderColor = Color.Transparent
+                        )
                     )
                     FilterChip(
                         selected = formatoSoloAudioGlobal,
                         onClick = { formatoSoloAudioGlobal = true },
-                        label = { Text("Música (${formatoAudioGlobal.uppercase()})") }
+                        label = { Text("Música (${formatoAudioGlobal.uppercase()})") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onPrimaryContainer,
+                            labelColor = colorTexto.copy(alpha = 0.7f)
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = formatoSoloAudioGlobal,
+                            borderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.2f) else MaterialTheme.colorScheme.outline,
+                            selectedBorderColor = Color.Transparent
+                        )
                     )
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
-                HorizontalDivider()
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(24.dp))
+                HorizontalDivider(color = colorTexto.copy(alpha = 0.1f))
+                Spacer(modifier = Modifier.height(24.dp))
 
                 // APARTADO 2: ACCIONES CORREGIDAS
                 val calidadActualTexto = if (formatoSoloAudioGlobal) calidadAudioGlobal else calidadVideoGlobal
@@ -1129,9 +1252,13 @@ fun PantallaVideo(esTablet: Boolean = false) {
                             // Forzamos a pasar urlParaDescargarGlobal, que contiene el link individual puro
                             iniciarDescarga(urlParaDescargarIndividualGlobal, contexto, descargarTodoElCanal = false)
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        shape = CircleShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else MaterialTheme.colorScheme.primary
+                        )
                     ) {
-                        Text("Descargar la canción actual ($calidadActualTexto)")
+                        Text("Descargar la canción actual ($calidadActualTexto)", fontWeight = FontWeight.Bold)
                     }
                 } else {
                     // OPCIÓN C: Descarga tradicional si pegaste un video único desde el principio
@@ -1140,13 +1267,16 @@ fun PantallaVideo(esTablet: Boolean = false) {
                             mostrarBottomSheetGlobal = false
                             iniciarDescarga(urlParaDescargarGlobal, contexto, descargarTodoElCanal = false)
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        shape = CircleShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else MaterialTheme.colorScheme.primary
+                        )
                     ) {
                         val formatoActualTexto = if (formatoSoloAudioGlobal) formatoAudioGlobal else formatoVideoGlobal
-                        Text("Confirmar y Descargar en ${formatoActualTexto.uppercase()} ($calidadActualTexto)")
+                        Text("Confirmar y Descargar en ${formatoActualTexto.uppercase()} ($calidadActualTexto)", fontWeight = FontWeight.Bold)
                     }
                 }
-                Spacer(modifier = Modifier.height(24.dp))
             }
         }
     }
@@ -1155,23 +1285,26 @@ fun PantallaVideo(esTablet: Boolean = false) {
 @Composable
 fun InfoVideoActual() {
     val esGlass = temaAppGlobal == ModoTema.CRISTAL_IOS
+    val esOscuro = esModoOscuroActivo()
     Card(
-        modifier = Modifier.fillMaxWidth().then(
-            if (esGlass) Modifier.border(0.5.dp, ColorGlassBorde, MaterialTheme.shapes.extraLarge) else Modifier
-        ),
-        shape = if (esGlass) MaterialTheme.shapes.extraLarge else MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth().glass(esGlass, shape = MaterialTheme.shapes.extraLarge, opacity = 0.1f, esOscuro = esOscuro),
+        shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.cardColors(
-            containerColor = if (esGlass) MaterialTheme.colorScheme.surface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
+            containerColor = Color.Transparent
         )
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Text(
                 text = "Reproduciendo ahora:",
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary
+                color = if (esGlass) ColorGlassVerdePrimario else MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(4.dp))
-            Text(text = tituloVideoActualGlobal, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = tituloVideoActualGlobal, 
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (esGlass) Color.White else MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }
@@ -1180,12 +1313,25 @@ fun InfoVideoActual() {
 fun ControlesPlaylist(contexto: Context) {
     if (videosPlaylistGlobal.size > 1) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            val colorTexto = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
             IconButton(
-                onClick = { GestorReproduccion.cargarYReproducirIndice(indiceActualVideoGlobal - 1, contexto) }, enabled = indiceActualVideoGlobal > 0) {
+                onClick = { GestorReproduccion.cargarYReproducirIndice(indiceActualVideoGlobal - 1, contexto) }, 
+                enabled = indiceActualVideoGlobal > 0,
+                colors = IconButtonDefaults.iconButtonColors(contentColor = colorTexto)
+            ) {
                 Icon(Icons.Default.SkipPrevious, contentDescription = "Anterior", modifier = Modifier.size(32.dp))
             }
-            Text(text = "Video ${indiceActualVideoGlobal + 1} de ${videosPlaylistGlobal.size}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 16.dp))
-            IconButton(onClick = { GestorReproduccion.cargarYReproducirIndice(indiceActualVideoGlobal + 1, contexto) }, enabled = indiceActualVideoGlobal < videosPlaylistGlobal.size - 1) {
+            Text(
+                text = "Video ${indiceActualVideoGlobal + 1} de ${videosPlaylistGlobal.size}", 
+                style = MaterialTheme.typography.bodyMedium, 
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = colorTexto
+            )
+            IconButton(
+                onClick = { GestorReproduccion.cargarYReproducirIndice(indiceActualVideoGlobal + 1, contexto) }, 
+                enabled = indiceActualVideoGlobal < videosPlaylistGlobal.size - 1,
+                colors = IconButtonDefaults.iconButtonColors(contentColor = colorTexto)
+            ) {
                 Icon(Icons.Default.SkipNext, contentDescription = "Siguiente", modifier = Modifier.size(32.dp))
             }
         }
@@ -1195,7 +1341,7 @@ fun ControlesPlaylist(contexto: Context) {
 @Composable
 fun ListaVideosPlaylist(cargando: Boolean, items: List<VideoPlaylistItem>, contexto: Context) {
     Spacer(modifier = Modifier.height(4.dp))
-    if (cargando) {
+    if (cargandoPlaylistGlobal) {
         Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
     }
     LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -1246,32 +1392,43 @@ fun ListaVideosPlaylist(cargando: Boolean, items: List<VideoPlaylistItem>, conte
                 }
             ) {
                 val esGlass = temaAppGlobal == ModoTema.CRISTAL_IOS
+                val esOscuro = esModoOscuroActivo()
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 2.dp)
-                        .then(if (esGlass) Modifier.border(0.5.dp, ColorGlassBorde, MaterialTheme.shapes.extraLarge) else Modifier),
-                    shape = if (esGlass) MaterialTheme.shapes.extraLarge else MaterialTheme.shapes.medium,
+                        .padding(vertical = 4.dp)
+                        .glass(esGlass, shape = MaterialTheme.shapes.extraLarge, opacity = 0.08f, esOscuro = esOscuro),
+                    shape = MaterialTheme.shapes.extraLarge,
                     colors = CardDefaults.cardColors(
-                        containerColor = if (esElVideoActual) MaterialTheme.colorScheme.primaryContainer else if (esGlass) MaterialTheme.colorScheme.surface.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant
+                        containerColor = if (esElVideoActual) {
+                            if (esGlass) ColorGlassVerdePrimario.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primaryContainer
+                        } else Color.Transparent
                     ),
                     onClick = { GestorReproduccion.cargarYReproducirIndice(index, contexto) }
                 ) {
                     Row(
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "${index + 1}.",
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(end = 8.dp),
-                            color = if (esElVideoActual) MaterialTheme.colorScheme.primary else Color.Unspecified
+                            color = if (esElVideoActual) {
+                                if (esGlass) ColorGlassVerdePrimario else MaterialTheme.colorScheme.primary
+                            } else {
+                                if (esGlass) Color.White.copy(alpha = 0.7f) else Color.Unspecified
+                            }
                         )
                         Text(
                             text = item.titulo,
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
-                            color = if (esElVideoActual) MaterialTheme.colorScheme.primary else Color.Unspecified
+                            color = if (esElVideoActual) {
+                                if (esGlass) ColorGlassVerdePrimario else MaterialTheme.colorScheme.primary
+                            } else {
+                                if (esGlass) Color.White else Color.Unspecified
+                            }
                         )
                     }
                 }
@@ -1293,6 +1450,7 @@ data class ArchivoGuardadoInfo(
 @Composable
 fun PantallaDescargas() {
     val contexto = LocalContext.current
+    val esOscuro = esModoOscuroActivo()
     var archivosLocalesHistoricos by remember { mutableStateOf(listOf<ArchivoGuardadoInfo>()) }
     var refrescando by remember { mutableStateOf(0) }
 
@@ -1352,13 +1510,14 @@ fun PantallaDescargas() {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val colorTexto = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
                 Text(
                     "Administrar Archivos",
                     style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = colorTexto
                 )
                 IconButton(onClick = { refrescando++ }) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refrescar lista")
+                    Icon(Icons.Default.Refresh, contentDescription = "Refrescar lista", tint = colorTexto)
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
@@ -1376,12 +1535,10 @@ fun PantallaDescargas() {
             items(descargasCorriendo) { descarga ->
                 val esGlass = temaAppGlobal == ModoTema.CRISTAL_IOS
                 Card(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).then(
-                        if (esGlass) Modifier.border(0.5.dp, ColorGlassBorde, MaterialTheme.shapes.extraLarge) else Modifier
-                    ),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).glass(esGlass, shape = MaterialTheme.shapes.extraLarge, esOscuro = esOscuro),
                     shape = if (esGlass) MaterialTheme.shapes.extraLarge else MaterialTheme.shapes.medium,
                     colors = CardDefaults.cardColors(
-                        containerColor = if (esGlass) MaterialTheme.colorScheme.surface.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        containerColor = if (esGlass) Color.Transparent else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                     )
                 ) {
                     // Usamos una fila para poner el botón detener al lado de la barra
@@ -1389,8 +1546,9 @@ fun PantallaDescargas() {
                         modifier = Modifier.padding(16.dp),
                         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                     ) {
+                        val colorTexto = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(descarga.titulo, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                            Text(descarga.titulo, style = MaterialTheme.typography.bodyLarge, maxLines = 1, color = colorTexto)
                             Spacer(modifier = Modifier.height(8.dp))
 
                             LinearWavyProgressIndicator(
@@ -1403,9 +1561,10 @@ fun PantallaDescargas() {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(
                                     text = if (descarga.esAudio) "Extrayendo Música..." else "Descargando Video...",
-                                    style = MaterialTheme.typography.bodySmall
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colorTexto.copy(alpha = 0.7f)
                                 )
-                                Text("${descarga.progreso.toInt()}%", style = MaterialTheme.typography.labelMedium)
+                                Text("${descarga.progreso.toInt()}%", style = MaterialTheme.typography.labelMedium, color = colorTexto)
                             }
                         }
 
@@ -1444,8 +1603,9 @@ fun PantallaDescargas() {
 
         if (archivosLocalesHistoricos.isEmpty()) {
             item {
+                val colorTexto = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
                 Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                    Text("No se encontraron canciones en el directorio.", style = MaterialTheme.typography.bodyMedium)
+                    Text("No se encontraron canciones en el directorio.", style = MaterialTheme.typography.bodyMedium, color = colorTexto.copy(alpha = 0.7f))
                 }
             }
         } else {
@@ -1458,14 +1618,14 @@ fun PantallaDescargas() {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 4.dp)
-                        .then(if (esGlass) Modifier.border(0.5.dp, ColorGlassBorde, MaterialTheme.shapes.extraLarge) else Modifier)
+                        .glass(esGlass, shape = MaterialTheme.shapes.extraLarge, esOscuro = esOscuro)
                         .combinedClickable(
                             onLongClick = { mostrarMenuContextual = true },
                             onClick = { reproducirEnSistemaExterno(contexto, itemCancion.archivoReal) }
                         ),
                     shape = if (esGlass) MaterialTheme.shapes.extraLarge else MaterialTheme.shapes.medium,
                     colors = CardDefaults.cardColors(
-                        containerColor = if (esGlass) MaterialTheme.colorScheme.surface.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant
+                        containerColor = if (esGlass) Color.Transparent else MaterialTheme.colorScheme.surfaceVariant
                     )
                 ) {
                     Row(
@@ -1497,12 +1657,13 @@ fun PantallaDescargas() {
                         Spacer(modifier = Modifier.width(12.dp))
 
                         // INFORMACIÓN DE LA CANCIÓN Y SU FORMATO
+                        val colorTexto = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(text = itemCancion.nombreCompleto, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                            Text(text = itemCancion.nombreCompleto, style = MaterialTheme.typography.bodyLarge, maxLines = 1, color = colorTexto)
                             Spacer(modifier = Modifier.height(2.dp))
                             SuggestionChip(
                                 onClick = { },
-                                label = { Text(itemCancion.formato) },
+                                label = { Text(itemCancion.formato, color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else Color.Unspecified) },
                                 modifier = Modifier.height(24.dp)
                             )
                         }
@@ -1510,17 +1671,18 @@ fun PantallaDescargas() {
                         // MENÚ DESPLEGABLE (CONTEXTUAL)
                         androidx.compose.material3.DropdownMenu(
                             expanded = mostrarMenuContextual,
-                            onDismissRequest = { mostrarMenuContextual = false }
+                            onDismissRequest = { mostrarMenuContextual = false },
+                            modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.background(Color.Black.copy(alpha = 0.9f)).border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.medium) else Modifier
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Abrir") },
+                                text = { Text("Abrir", color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else Color.Unspecified) },
                                 onClick = {
                                     mostrarMenuContextual = false
                                     reproducirEnSistemaExterno(contexto, itemCancion.archivoReal)
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Compartir") },
+                                text = { Text("Compartir", color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else Color.Unspecified) },
                                 onClick = {
                                     mostrarMenuContextual = false
                                     compartirArchivo(contexto, itemCancion.archivoReal)
@@ -1539,10 +1701,13 @@ fun PantallaDescargas() {
 
                 // DIÁLOGO DE CONFIRMACIÓN PARA ELIMINAR
                 if (mostrarConfirmacionEliminar) {
+                    val colorTextoDialog = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
                     AlertDialog(
                         onDismissRequest = { mostrarConfirmacionEliminar = false },
-                        title = { Text("¿Eliminar archivo?") },
-                        text = { Text("Esta acción borrará '${itemCancion.nombreCompleto}' de forma permanente de tu dispositivo.") },
+                        containerColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) (if (esOscuro) Color.Black.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.9f)) else MaterialTheme.colorScheme.surface,
+                        modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.extraLarge) else Modifier,
+                        title = { Text("¿Eliminar archivo?", color = colorTextoDialog) },
+                        text = { Text("Esta acción borrará '${itemCancion.nombreCompleto}' de forma permanente de tu dispositivo.", color = colorTextoDialog.copy(alpha = 0.8f)) },
                         confirmButton = {
                             TextButton(
                                 onClick = {
@@ -1580,7 +1745,7 @@ fun PantallaDescargas() {
                         },
                         dismissButton = {
                             TextButton(onClick = { mostrarConfirmacionEliminar = false }) {
-                                Text("Cancelar")
+                                Text("Cancelar", color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.7f) else Color.Unspecified)
                             }
                         }
                     )
@@ -1594,6 +1759,7 @@ fun PantallaDescargas() {
 @Composable
 fun PantallaConfiguraciones() {
     val contexto = LocalContext.current
+    val esOscuro = esModoOscuroActivo()
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1604,6 +1770,8 @@ fun PantallaConfiguraciones() {
         Spacer(modifier = Modifier.height(8.dp))
 
         var expandidoTema by remember { mutableStateOf(false) }
+        val colorTexto = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
+        
         ExposedDropdownMenuBox(expanded = expandidoTema, onExpandedChange = { expandidoTema = !expandidoTema }) {
             OutlinedTextField(
                 value = when(temaAppGlobal) {
@@ -1614,21 +1782,38 @@ fun PantallaConfiguraciones() {
                 },
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("Modo de la Aplicación") },
+                placeholder = { Text("Modo de la Aplicación", color = colorTexto.copy(alpha = 0.6f)) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandidoTema) },
-                shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else OutlinedTextFieldDefaults.shape,
-                modifier = Modifier.fillMaxWidth().menuAnchor()
+                shape = CircleShape,
+                modifier = Modifier.fillMaxWidth().menuAnchor().glass(temaAppGlobal == ModoTema.CRISTAL_IOS, shape = CircleShape, opacity = 0.1f, esOscuro = esOscuro),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline,
+                    focusedTextColor = colorTexto,
+                    unfocusedTextColor = colorTexto,
+                    cursorColor = colorTexto,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent
+                )
             )
-            ExposedDropdownMenu(expanded = expandidoTema, onDismissRequest = { expandidoTema = false }) {
+            ExposedDropdownMenu(
+                expanded = expandidoTema, 
+                onDismissRequest = { expandidoTema = false },
+                modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.background(Color.Black.copy(alpha = 0.9f)).border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.medium) else Modifier
+            ) {
                 ModoTema.entries.forEach { modo ->
+                    val esSeleccionado = temaAppGlobal == modo
                     DropdownMenuItem(
                         text = {
-                            Text(when(modo) {
-                                ModoTema.CLARO -> "Tema Claro"
-                                ModoTema.OSCURO -> "Tema Oscuro"
-                                ModoTema.AUTOMATICO -> "Automático (Sistema)"
-                                ModoTema.CRISTAL_IOS -> "Cristal iOS (Estilo Glass)"
-                            })
+                            Text(
+                                text = when(modo) {
+                                    ModoTema.CLARO -> "Tema Claro"
+                                    ModoTema.OSCURO -> "Tema Oscuro"
+                                    ModoTema.AUTOMATICO -> "Automático (Sistema)"
+                                    ModoTema.CRISTAL_IOS -> "Cristal iOS (Estilo Glass)"
+                                },
+                                color = if (esSeleccionado && temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else colorTexto
+                            )
                         },
                         onClick = {
                             temaAppGlobal = modo
@@ -1654,18 +1839,35 @@ fun PantallaConfiguraciones() {
                 value = resolucionReproduccionGlobal,
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("Resolución por defecto al Ver en Vivo") },
+                placeholder = { Text("Resolución por defecto al Ver en Vivo", color = colorTexto.copy(alpha = 0.6f)) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandidoRes) },
-                shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else OutlinedTextFieldDefaults.shape,
-                modifier = Modifier.fillMaxWidth().menuAnchor()
+                shape = CircleShape,
+                modifier = Modifier.fillMaxWidth().menuAnchor().glass(temaAppGlobal == ModoTema.CRISTAL_IOS, shape = CircleShape, opacity = 0.1f, esOscuro = esOscuro),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline,
+                    focusedTextColor = colorTexto,
+                    unfocusedTextColor = colorTexto,
+                    cursorColor = colorTexto,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent
+                )
             )
-            ExposedDropdownMenu(expanded = expandidoRes, onDismissRequest = { expandidoRes = false }) {
+            ExposedDropdownMenu(
+                expanded = expandidoRes, 
+                onDismissRequest = { expandidoRes = false },
+                modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.background(Color.Black.copy(alpha = 0.9f)).border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.medium) else Modifier
+            ) {
                 listOf("360p", "480p", "720p").forEach { res ->
-                    DropdownMenuItem(text = { Text(res) }, onClick = {
-                        resolucionReproduccionGlobal = res
-                        expandidoRes = false
-                        PreferenciasApp(contexto).guardarString(PreferenciasApp.KEY_RESOLUCION_REPRO, res)
-                    })
+                    val esSeleccionado = resolucionReproduccionGlobal == res
+                    DropdownMenuItem(
+                        text = { Text(res, color = if (esSeleccionado && temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else colorTexto) }, 
+                        onClick = {
+                            resolucionReproduccionGlobal = res
+                            expandidoRes = false
+                            PreferenciasApp(contexto).guardarString(PreferenciasApp.KEY_RESOLUCION_REPRO, res)
+                        }
+                    )
                 }
             }
         }
@@ -1674,8 +1876,8 @@ fun PantallaConfiguraciones() {
 
         // --- NUEVA OPCIÓN: ANDROID AUTO ---
         ListItem(
-            headlineContent = { Text("Compatibilidad con Android Auto") },
-            supportingContent = { Text("Permite controlar la música y ver la lista desde el coche.") },
+            headlineContent = { Text("Compatibilidad con Android Auto", color = colorTexto) },
+            supportingContent = { Text("Permite controlar la música y ver la lista desde el coche.", color = colorTexto.copy(alpha = 0.7f)) },
             trailingContent = {
                 Switch(
                     checked = androidAutoActivadoGlobal,
@@ -1700,8 +1902,8 @@ fun PantallaConfiguraciones() {
         var nivelBajos by remember { mutableStateOf(prefs.obtenerString(PreferenciasApp.KEY_NIVEL_BAJOS, "Medio")) }
 
         ListItem(
-            headlineContent = { Text("Sonido Hi-Fi y Loudness") },
-            supportingContent = { Text("Aumenta la potencia y nitidez (Opus 251).") },
+            headlineContent = { Text("Sonido Hi-Fi y Loudness", color = colorTexto) },
+            supportingContent = { Text("Aumenta la potencia y nitidez (Opus 251).", color = colorTexto.copy(alpha = 0.7f)) },
             trailingContent = {
                 Switch(
                     checked = audioPremiumActivado,
@@ -1721,20 +1923,38 @@ fun PantallaConfiguraciones() {
                 value = "Refuerzo de Bajos: $nivelBajos",
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("Potencia de Graves") },
+                placeholder = { Text("Potencia de Graves", color = colorTexto.copy(alpha = 0.6f)) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandidoBajos) },
-                shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else OutlinedTextFieldDefaults.shape,
-                modifier = Modifier.fillMaxWidth().menuAnchor(),
-                enabled = audioPremiumActivado
+                shape = CircleShape,
+                modifier = Modifier.fillMaxWidth().menuAnchor().glass(temaAppGlobal == ModoTema.CRISTAL_IOS, shape = CircleShape, opacity = 0.1f, esOscuro = esOscuro),
+                enabled = audioPremiumActivado,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline,
+                    focusedTextColor = colorTexto,
+                    unfocusedTextColor = colorTexto,
+                    disabledTextColor = colorTexto.copy(alpha = 0.5f),
+                    cursorColor = colorTexto,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent
+                )
             )
-            ExposedDropdownMenu(expanded = expandidoBajos, onDismissRequest = { expandidoBajos = false }) {
+            ExposedDropdownMenu(
+                expanded = expandidoBajos, 
+                onDismissRequest = { expandidoBajos = false },
+                modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.background(Color.Black.copy(alpha = 0.9f)).border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.medium) else Modifier
+            ) {
                 listOf("Bajo", "Medio", "Alto").forEach { nivel ->
-                    DropdownMenuItem(text = { Text(nivel) }, onClick = {
-                        nivelBajos = nivel
-                        expandidoBajos = false
-                        prefs.guardarString(PreferenciasApp.KEY_NIVEL_BAJOS, nivel)
-                        GestorAudio.actualizarEstado(audioPremiumActivado, contexto)
-                    })
+                    val esSeleccionado = nivelBajos == nivel
+                    DropdownMenuItem(
+                        text = { Text(nivel, color = if (esSeleccionado && temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else colorTexto) }, 
+                        onClick = {
+                            nivelBajos = nivel
+                            expandidoBajos = false
+                            prefs.guardarString(PreferenciasApp.KEY_NIVEL_BAJOS, nivel)
+                            GestorAudio.actualizarEstado(audioPremiumActivado, contexto)
+                        }
+                    )
                 }
             }
         }
@@ -1750,21 +1970,38 @@ fun PantallaConfiguraciones() {
         var expandidoFormatoAudio by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(expanded = expandidoFormatoAudio, onExpandedChange = { expandidoFormatoAudio = !expandidoFormatoAudio }) {
             OutlinedTextField(
-                value = formatoAudioGlobal,
+                value = formatoAudioGlobal.uppercase(),
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("Formato de extracción") },
+                placeholder = { Text("Formato de extracción", color = colorTexto.copy(alpha = 0.6f)) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandidoFormatoAudio) },
-                shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else OutlinedTextFieldDefaults.shape,
-                modifier = Modifier.fillMaxWidth().menuAnchor()
+                shape = CircleShape,
+                modifier = Modifier.fillMaxWidth().menuAnchor().glass(temaAppGlobal == ModoTema.CRISTAL_IOS, shape = CircleShape, opacity = 0.1f, esOscuro = esOscuro),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline,
+                    focusedTextColor = colorTexto,
+                    unfocusedTextColor = colorTexto,
+                    cursorColor = colorTexto,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent
+                )
             )
-            ExposedDropdownMenu(expanded = expandidoFormatoAudio, onDismissRequest = { expandidoFormatoAudio = false }) {
+            ExposedDropdownMenu(
+                expanded = expandidoFormatoAudio, 
+                onDismissRequest = { expandidoFormatoAudio = false },
+                modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.background(Color.Black.copy(alpha = 0.9f)).border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.medium) else Modifier
+            ) {
                 listOf("mp3", "m4a", "opus").forEach { formato ->
-                    DropdownMenuItem(text = { Text(formato.uppercase()) }, onClick = { 
-                        formatoAudioGlobal = formato 
-                        expandidoFormatoAudio = false
-                        PreferenciasApp(contexto).guardarString(PreferenciasApp.KEY_FORMATO_AUDIO, formato)
-                    })
+                    val esSeleccionado = formatoAudioGlobal == formato
+                    DropdownMenuItem(
+                        text = { Text(formato.uppercase(), color = if (esSeleccionado && temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else colorTexto) }, 
+                        onClick = { 
+                            formatoAudioGlobal = formato 
+                            expandidoFormatoAudio = false
+                            PreferenciasApp(contexto).guardarString(PreferenciasApp.KEY_FORMATO_AUDIO, formato)
+                        }
+                    )
                 }
             }
         }
@@ -1778,18 +2015,35 @@ fun PantallaConfiguraciones() {
                 value = calidadAudioGlobal,
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("Calidad / Bitrate") },
+                placeholder = { Text("Calidad / Bitrate", color = colorTexto.copy(alpha = 0.6f)) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandidoCalidadAudio) },
-                shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else OutlinedTextFieldDefaults.shape,
-                modifier = Modifier.fillMaxWidth().menuAnchor()
+                shape = CircleShape,
+                modifier = Modifier.fillMaxWidth().menuAnchor().glass(temaAppGlobal == ModoTema.CRISTAL_IOS, shape = CircleShape, opacity = 0.1f, esOscuro = esOscuro),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline,
+                    focusedTextColor = colorTexto,
+                    unfocusedTextColor = colorTexto,
+                    cursorColor = colorTexto,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent
+                )
             )
-            ExposedDropdownMenu(expanded = expandidoCalidadAudio, onDismissRequest = { expandidoCalidadAudio = false }) {
+            ExposedDropdownMenu(
+                expanded = expandidoCalidadAudio, 
+                onDismissRequest = { expandidoCalidadAudio = false },
+                modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.background(Color.Black.copy(alpha = 0.9f)).border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.medium) else Modifier
+            ) {
                 listOf("128k", "192k", "320k").forEach { bits ->
-                    DropdownMenuItem(text = { Text(bits) }, onClick = { 
-                        calidadAudioGlobal = bits 
-                        expandidoCalidadAudio = false
-                        PreferenciasApp(contexto).guardarString(PreferenciasApp.KEY_CALIDAD_AUDIO, bits)
-                    })
+                    val esSeleccionado = calidadAudioGlobal == bits
+                    DropdownMenuItem(
+                        text = { Text(bits, color = if (esSeleccionado && temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else colorTexto) }, 
+                        onClick = { 
+                            calidadAudioGlobal = bits 
+                            expandidoCalidadAudio = false
+                            PreferenciasApp(contexto).guardarString(PreferenciasApp.KEY_CALIDAD_AUDIO, bits)
+                        }
+                    )
                 }
             }
         }
@@ -1807,14 +2061,23 @@ fun PantallaConfiguraciones() {
                     rutaGuardadoAudioGlobal = it
                     PreferenciasApp(contexto).guardarString(PreferenciasApp.KEY_RUTA_AUDIO, it)
                 },
-                label = { Text("Carpeta de Audio") },
-                shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else OutlinedTextFieldDefaults.shape,
-                modifier = Modifier.weight(1f),
-                singleLine = true
+                placeholder = { Text("Carpeta de Audio", color = colorTexto.copy(alpha = 0.6f)) },
+                shape = CircleShape,
+                modifier = Modifier.weight(1f).glass(temaAppGlobal == ModoTema.CRISTAL_IOS, shape = CircleShape, opacity = 0.1f, esOscuro = esOscuro),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline,
+                    focusedTextColor = colorTexto,
+                    unfocusedTextColor = colorTexto,
+                    cursorColor = colorTexto,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent
+                )
             )
             Spacer(modifier = Modifier.width(8.dp))
             IconButton(onClick = { MainActivity.launcherCarpetaAudio?.launch(null) }) {
-                Icon(Icons.Default.FolderOpen, contentDescription = "Buscar carpeta")
+                Icon(Icons.Default.FolderOpen, contentDescription = "Buscar carpeta", tint = colorTexto)
             }
         }
 
@@ -1829,21 +2092,38 @@ fun PantallaConfiguraciones() {
         var expandidoFormatoVideo by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(expanded = expandidoFormatoVideo, onExpandedChange = { expandidoFormatoVideo = !expandidoFormatoVideo }) {
             OutlinedTextField(
-                value = formatoVideoGlobal,
+                value = formatoVideoGlobal.uppercase(),
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("Contenedor de Video") },
+                placeholder = { Text("Contenedor de Video", color = colorTexto.copy(alpha = 0.6f)) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandidoFormatoVideo) },
-                shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else OutlinedTextFieldDefaults.shape,
-                modifier = Modifier.fillMaxWidth().menuAnchor()
+                shape = CircleShape,
+                modifier = Modifier.fillMaxWidth().menuAnchor().glass(temaAppGlobal == ModoTema.CRISTAL_IOS, shape = CircleShape, opacity = 0.1f, esOscuro = esOscuro),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline,
+                    focusedTextColor = colorTexto,
+                    unfocusedTextColor = colorTexto,
+                    cursorColor = colorTexto,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent
+                )
             )
-            ExposedDropdownMenu(expanded = expandidoFormatoVideo, onDismissRequest = { expandidoFormatoVideo = false }) {
+            ExposedDropdownMenu(
+                expanded = expandidoFormatoVideo, 
+                onDismissRequest = { expandidoFormatoVideo = false },
+                modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.background(Color.Black.copy(alpha = 0.9f)).border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.medium) else Modifier
+            ) {
                 listOf("mp4", "mkv", "webm").forEach { formato ->
-                    DropdownMenuItem(text = { Text(formato.uppercase()) }, onClick = { 
-                        formatoVideoGlobal = formato 
-                        expandidoFormatoVideo = false
-                        PreferenciasApp(contexto).guardarString(PreferenciasApp.KEY_FORMATO_VIDEO, formato)
-                    })
+                    val esSeleccionado = formatoVideoGlobal == formato
+                    DropdownMenuItem(
+                        text = { Text(formato.uppercase(), color = if (esSeleccionado && temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else colorTexto) }, 
+                        onClick = { 
+                            formatoVideoGlobal = formato 
+                            expandidoFormatoVideo = false
+                            PreferenciasApp(contexto).guardarString(PreferenciasApp.KEY_FORMATO_VIDEO, formato)
+                        }
+                    )
                 }
             }
         }
@@ -1857,18 +2137,35 @@ fun PantallaConfiguraciones() {
                 value = calidadVideoGlobal,
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("Calidad máxima de descarga") },
+                placeholder = { Text("Calidad máxima de descarga", color = colorTexto.copy(alpha = 0.6f)) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandidoCalidadVideo) },
-                shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else OutlinedTextFieldDefaults.shape,
-                modifier = Modifier.fillMaxWidth().menuAnchor()
+                shape = CircleShape,
+                modifier = Modifier.fillMaxWidth().menuAnchor().glass(temaAppGlobal == ModoTema.CRISTAL_IOS, shape = CircleShape, opacity = 0.1f, esOscuro = esOscuro),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline,
+                    focusedTextColor = colorTexto,
+                    unfocusedTextColor = colorTexto,
+                    cursorColor = colorTexto,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent
+                )
             )
-            ExposedDropdownMenu(expanded = expandidoCalidadVideo, onDismissRequest = { expandidoCalidadVideo = false }) {
+            ExposedDropdownMenu(
+                expanded = expandidoCalidadVideo, 
+                onDismissRequest = { expandidoCalidadVideo = false },
+                modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.background(Color.Black.copy(alpha = 0.9f)).border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.medium) else Modifier
+            ) {
                 listOf("360p", "480p", "720p", "1080p").forEach { cal ->
-                    DropdownMenuItem(text = { Text(cal) }, onClick = { 
-                        calidadVideoGlobal = cal
-                        expandidoCalidadVideo = false
-                        PreferenciasApp(contexto).guardarString(PreferenciasApp.KEY_CALIDAD_VIDEO, cal)
-                    })
+                    val esSeleccionado = calidadVideoGlobal == cal
+                    DropdownMenuItem(
+                        text = { Text(cal, color = if (esSeleccionado && temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else colorTexto) }, 
+                        onClick = { 
+                            calidadVideoGlobal = cal
+                            expandidoCalidadVideo = false
+                            PreferenciasApp(contexto).guardarString(PreferenciasApp.KEY_CALIDAD_VIDEO, cal)
+                        }
+                    )
                 }
             }
         }
@@ -1886,14 +2183,23 @@ fun PantallaConfiguraciones() {
                     rutaGuardadoVideoGlobal = it
                     PreferenciasApp(contexto).guardarString(PreferenciasApp.KEY_RUTA_VIDEO, it)
                 },
-                label = { Text("Carpeta de Video") },
-                shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else OutlinedTextFieldDefaults.shape,
-                modifier = Modifier.weight(1f),
-                singleLine = true
+                placeholder = { Text("Carpeta de Video", color = colorTexto.copy(alpha = 0.6f)) },
+                shape = CircleShape,
+                modifier = Modifier.weight(1f).glass(temaAppGlobal == ModoTema.CRISTAL_IOS, shape = CircleShape, opacity = 0.1f, esOscuro = esOscuro),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline,
+                    focusedTextColor = colorTexto,
+                    unfocusedTextColor = colorTexto,
+                    cursorColor = colorTexto,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent
+                )
             )
             Spacer(modifier = Modifier.width(8.dp))
             IconButton(onClick = { MainActivity.launcherCarpetaVideo?.launch(null) }) {
-                Icon(Icons.Default.FolderOpen, contentDescription = "Buscar carpeta")
+                Icon(Icons.Default.FolderOpen, contentDescription = "Buscar carpeta", tint = colorTexto)
             }
         }
         Spacer(modifier = Modifier.height(24.dp))
@@ -1925,9 +2231,7 @@ fun PantallaConfiguraciones() {
                 }
             },
             enabled = !buscandoAppUpdate,
-            modifier = Modifier.fillMaxWidth().then(
-                if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.border(0.5.dp, ColorGlassBorde, MaterialTheme.shapes.extraLarge) else Modifier
-            ),
+            modifier = Modifier.fillMaxWidth().glass(temaAppGlobal == ModoTema.CRISTAL_IOS, shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else ButtonDefaults.shape, esOscuro = esOscuro),
             shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else ButtonDefaults.shape,
             colors = ButtonDefaults.buttonColors(containerColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f) else MaterialTheme.colorScheme.primary)
         ) {
@@ -1941,15 +2245,18 @@ fun PantallaConfiguraciones() {
         }
 
         if (mostrarDialogoUpdate && releaseInfo != null) {
+            val colorTextoDialog = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
             AlertDialog(
                 onDismissRequest = { mostrarDialogoUpdate = false },
-                title = { Text("¡Nueva Versión Disponible! (${releaseInfo!!.version})") },
+                containerColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) (if (esOscuro) Color.Black.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.9f)) else MaterialTheme.colorScheme.surface,
+                modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.extraLarge) else Modifier,
+                title = { Text("¡Nueva Versión Disponible! (${releaseInfo!!.version})", color = colorTextoDialog) },
                 text = {
                     Column {
-                        Text("Se ha encontrado una nueva actualización en GitHub.")
+                        Text("Se ha encontrado una nueva actualización en GitHub.", color = colorTextoDialog.copy(alpha = 0.8f))
                         if (releaseInfo!!.body.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text(releaseInfo!!.body, style = MaterialTheme.typography.bodySmall)
+                            Text(releaseInfo!!.body, style = MaterialTheme.typography.bodySmall, color = colorTextoDialog.copy(alpha = 0.6f))
                         }
                     }
                 },
@@ -1958,12 +2265,12 @@ fun PantallaConfiguraciones() {
                         mostrarDialogoUpdate = false
                         ActualizadorApp.descargarEInstalar(contexto, releaseInfo!!.downloadUrl)
                     }) {
-                        Text("Actualizar Ahora")
+                        Text("Actualizar Ahora", color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else MaterialTheme.colorScheme.primary)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { mostrarDialogoUpdate = false }) {
-                        Text("Más tarde")
+                        Text("Más tarde", color = colorTextoDialog.copy(alpha = 0.7f))
                     }
                 }
             )
@@ -2001,9 +2308,7 @@ fun PantallaConfiguraciones() {
                 }
             },
             enabled = !cargandoActualizacion,
-            modifier = Modifier.fillMaxWidth().then(
-                if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.border(0.5.dp, ColorGlassBorde, MaterialTheme.shapes.extraLarge) else Modifier
-            ),
+            modifier = Modifier.fillMaxWidth().glass(temaAppGlobal == ModoTema.CRISTAL_IOS, shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else ButtonDefaults.shape, esOscuro = esOscuro),
             shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else ButtonDefaults.shape,
             colors = ButtonDefaults.buttonColors(containerColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f) else MaterialTheme.colorScheme.primary)
         ) {
@@ -2017,9 +2322,7 @@ fun PantallaConfiguraciones() {
 
         OutlinedButton(
             onClick = { mostrarTarjetaDonacion = true },
-            modifier = Modifier.fillMaxWidth().then(
-                if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.border(0.5.dp, ColorGlassBorde, MaterialTheme.shapes.extraLarge) else Modifier
-            ),
+            modifier = Modifier.fillMaxWidth().glass(temaAppGlobal == ModoTema.CRISTAL_IOS, shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else ButtonDefaults.outlinedShape, esOscuro = esOscuro),
             shape = if (temaAppGlobal == ModoTema.CRISTAL_IOS) MaterialTheme.shapes.extraLarge else ButtonDefaults.outlinedShape
         ) {
             Text("☕ Invita un cafe al desarrollador")
@@ -2033,9 +2336,10 @@ fun PantallaConfiguraciones() {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth(0.9f)
-                        .padding(16.dp),
+                        .padding(16.dp)
+                        .glass(temaAppGlobal == ModoTema.CRISTAL_IOS, shape = MaterialTheme.shapes.extraLarge, esOscuro = esOscuro),
                     shape = MaterialTheme.shapes.extraLarge,
-                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                    colors = CardDefaults.cardColors(containerColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.Transparent else Color.White)
                 ) {
                     Column {
                         // 1. PORTADA
@@ -2068,6 +2372,13 @@ fun PantallaConfiguraciones() {
                         Spacer(modifier = Modifier.height(50.dp))
 
                         // 3. INFORMACIÓN DEL PERFIL
+                        val colorTextoDialog = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.Black else Color.Black // In a dialog with white background, black text is best. But the user said "gris oscuro se vuelvan gris claro". 
+                        // Wait, the donation dialog card has containerColor = Color.White. 
+                        // If the user wants ALL texts light, maybe I should make the card glassy too?
+                        // "quiero que los textos que aun estan en gris oscuro se vuelvan gris claro y sean legibles"
+                        // On a white background (CardDefaults.cardColors(containerColor = Color.White)), light grey is NOT legible.
+                        // I will make the donation card Glassy if the theme is Glass.
+                        
                         Column(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
@@ -2076,17 +2387,17 @@ fun PantallaConfiguraciones() {
                                 text = "Alejandro Corona",
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.Black
+                                color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else Color.Black
                             )
                             Text(
                                 text = "Desarrollador Senior C",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = Color.Gray
+                                color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.7f) else Color.Gray
                             )
                             Text(
                                 text = "Tandem",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = Color.Gray
+                                color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.7f) else Color.Gray
                             )
                             
                             Spacer(modifier = Modifier.height(16.dp))
@@ -2097,7 +2408,7 @@ fun PantallaConfiguraciones() {
                                 text = "Si te gusta mi trabajo y quieres apoyar el desarrollo de FrogDownloader, ¡invítame un café!",
                                 style = MaterialTheme.typography.bodyMedium,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                color = Color.DarkGray,
+                                color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else Color.DarkGray,
                                 modifier = Modifier.padding(horizontal = 8.dp)
                             )
 
@@ -2118,7 +2429,7 @@ fun PantallaConfiguraciones() {
                             }
                             
                             TextButton(onClick = { mostrarTarjetaDonacion = false }) {
-                                Text("Cerrar", color = Color.Gray)
+                                Text("Cerrar", color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.6f) else Color.Gray)
                             }
                         }
                     }
@@ -2142,9 +2453,9 @@ fun PantallaConfiguraciones() {
         ) {
             // Texto principal con el número de versión solicitado
             Text(
-                text = "FrogDownloader Pro",
+                text = "FrogDownloader",
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             )
 
             Spacer(modifier = Modifier.height(2.dp))
@@ -2152,7 +2463,7 @@ fun PantallaConfiguraciones() {
             Text(
                 text = "Versión ${ActualizadorApp.obtenerVersionLocal(contexto)}",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 modifier = Modifier
                     .clickable(
                         // Desactivamos el molesto efecto de parpadeo gris al tocar para que sea 100% secreto
@@ -2171,8 +2482,11 @@ fun PantallaConfiguraciones() {
 
         // DIÁLOGO EMERGENTE MATERIAL DESIGN 3 CON LA SORPRESA ROMÁNTICA
         if (mostrarSorpresaRomantica) {
+            val colorTextoDialog = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
             AlertDialog(
                 onDismissRequest = { mostrarSorpresaRomantica = false },
+                containerColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) (if (esOscuro) Color.Black.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.9f)) else MaterialTheme.colorScheme.surface,
+                modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.extraLarge) else Modifier,
                 confirmButton = {
                     TextButton(onClick = { mostrarBottomSheetGlobal = false; mostrarSorpresaRomantica = false }) {
                         Text("Te amo ❤️", color = Color(0xFFE91E63))
@@ -2180,34 +2494,33 @@ fun PantallaConfiguraciones() {
                 },
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("¡Cofre Secreto Activado! 🧸", style = MaterialTheme.typography.titleLarge)
+                        Text("¡Cofre Secreto Activado! 🧸", style = MaterialTheme.typography.titleLarge, color = colorTextoDialog)
                     }
                 },
                 text = {
                     Column {
                         Text(
                             text = "Hola mi amor, si estás leyendo esto es porque encontraste el secreto que escondí en el código para ti...",
-                            style = MaterialTheme.typography.bodyLarge
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = colorTextoDialog.copy(alpha = 0.8f)
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(
-                                containerColor = Color(0xFFFCE4EC) // Fondo rosa pastel muy tierno
+                                containerColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color(0xFFFCE4EC).copy(alpha = 0.2f) else Color(0xFFFCE4EC)
                             )
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Text(
                                     text = "Gracias por ser mi mayor apoyo mientras programo y por inspirarme todos los días. Esta aplicación fue hecha con líneas de código, pero mi corazón está lleno de ti. ¡Eres mi persona favorita Mi Mary! 💖",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = Color(0xFF880E4F) // Texto vino oscuro para contrastar el rosa
+                                    color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else Color(0xFF880E4F)
                                 )
                             }
                         }
                     }
-                },
-                containerColor = MaterialTheme.colorScheme.surface,
-                shape = MaterialTheme.shapes.extraLarge
+                }
             )
         }
         // ====================================================================

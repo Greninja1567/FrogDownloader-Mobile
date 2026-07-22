@@ -61,6 +61,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        appEnPrimerPlanoGlobal = true
         checkAndRequestPermissions()
         // Creamos un token de enlace seguro hacia el PlaybackService que creamos antes
         val tokenServicio = SessionToken(this, ComponentName(this, PlaybackService::class.java))
@@ -111,12 +112,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        appEnPrimerPlanoGlobal = true
+    }
+
+    override fun onPause() {
+        super.onPause()
+        appEnPrimerPlanoGlobal = false
+    }
+
     private fun handleIntent(intent: Intent?) {
         if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
             intent.getStringExtra(Intent.EXTRA_TEXT)?.let { sharedText ->
                 // Extraer la URL del texto (YouTube a veces envía texto + link)
                 val url = sharedText.split(" ").firstOrNull { it.startsWith("http") } ?: sharedText
-                urlCompartidaDesdeYoutubeGlobal = url
+                if (url.isNotEmpty()) {
+                    urlActualParaDescargarGlobal = url
+                    GestorReproduccion.procesarCarga(url, true, this)
+                }
             }
         }
     }
@@ -128,6 +142,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         // Liberamos la comunicación al cerrar la ventana para no consumir batería
+        appEnPrimerPlanoGlobal = false
         controladorMultimedia?.release()
         super.onStop()
     }
