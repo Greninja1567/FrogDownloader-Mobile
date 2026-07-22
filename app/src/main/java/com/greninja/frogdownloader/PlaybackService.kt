@@ -1,5 +1,6 @@
 package com.greninja.frogdownloader
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Environment
 import androidx.annotation.OptIn
@@ -12,6 +13,12 @@ import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionError
+import androidx.media3.session.DefaultMediaNotificationProvider
+import androidx.core.app.NotificationCompat
+import android.app.Service
+import android.content.pm.ServiceInfo
+import android.os.Build
+import androidx.media3.session.MediaStyleNotificationHelper
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -89,6 +96,14 @@ class PlaybackService : MediaLibraryService() {
                 session: MediaSession,
                 controller: MediaSession.ControllerInfo
             ): MediaSession.ConnectionResult {
+                val prefs = PreferenciasApp(this@PlaybackService)
+                val activado = prefs.obtenerBoolean(PreferenciasApp.KEY_ANDROID_AUTO, true)
+                
+                // Si Android Auto está desactivado y el controlador es externo, rechazamos la conexión
+                if (!activado && controller.packageName != packageName) {
+                    return MediaSession.ConnectionResult.reject()
+                }
+
                 val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
                     .build()
                 val playerCommands = session.player.availableCommands.buildUpon()
@@ -305,13 +320,53 @@ class PlaybackService : MediaLibraryService() {
             }
         }
 
-        mediaLibrarySession = MediaLibrarySession.Builder(this, forwardingPlayer, callback).build()
+        val sessionActivityPendingIntent = Intent(this, MainActivity::class.java).let { intent ->
+            android.app.PendingIntent.getActivity(
+                this, 
+                0, 
+                intent, 
+                android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+            )
+        }
+        
+        mediaLibrarySession = MediaLibrarySession.Builder(this, forwardingPlayer, callback)
+            .setSessionActivity(sessionActivityPendingIntent)
+            .build()
+        
+        // Configuramos el proveedor de notificaciones para usar nuestro canal de media
+        setMediaNotificationProvider(DefaultMediaNotificationProvider.Builder(this)
+            .setChannelId(MEDIA_CHANNEL_ID)
+            .build())
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
-        val prefs = PreferenciasApp(this)
-        val activado = prefs.obtenerBoolean(PreferenciasApp.KEY_ANDROID_AUTO, true)
-        return if (activado) mediaLibrarySession else null
+        // IMPORTANTE: Siempre retornar la sesión si existe para evitar el crash ForegroundServiceDidNotStartInTimeException.
+        // La restricción de Android Auto se maneja ahora en onConnect.
+        return mediaLibrarySession
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // --- SOLUCIÓN: CONTROLES MULTIMEDIA INMEDIATOS ---
+        // Usamos el ID 1001 (Media3 default) y MediaStyle para que la cortina muestre el reproductor desde el inicio.
+        val session = mediaLibrarySession
+        if (session != null) {
+            val notification = NotificationCompat.Builder(this, MEDIA_CHANNEL_ID)
+                .setSmallIcon(R.drawable.icono)
+                .setContentTitle("FrogDownloader")
+                .setContentText("YouTube")
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setSilent(true)
+                .setStyle(MediaStyleNotificationHelper.MediaStyle(session))
+                .build()
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(1001, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+            } else {
+                startForeground(1001, notification)
+            }
+        }
+
+        return super.onStartCommand(intent, flags, startId)
     }
 
     override fun onDestroy() {
