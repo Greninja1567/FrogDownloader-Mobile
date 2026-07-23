@@ -32,7 +32,10 @@ class PlaybackService : MediaLibraryService() {
     companion object {
         private var instance: PlaybackService? = null
         fun actualizarListaEnAuto() {
-            instance?.mediaLibrarySession?.notifyChildrenChanged("FROG_ROOT", 0, null)
+            instance?.mediaLibrarySession?.let { session ->
+                session.notifyChildrenChanged("FROG_ROOT", 0, null)
+                session.notifyChildrenChanged("PLAYLIST_SECTION", 0, null)
+            }
         }
     }
 
@@ -150,7 +153,7 @@ class PlaybackService : MediaLibraryService() {
                                 .setSubtitle("Tus videos actuales")
                                 .setIsBrowsable(true)
                                 .setIsPlayable(false)
-                                .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+                                .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS)
                                 .setArtworkUri(iconUri)
                                 .build())
                             .build()
@@ -195,7 +198,7 @@ class PlaybackService : MediaLibraryService() {
                                         .setArtist("FrogDownloader")
                                         .setIsBrowsable(false)
                                         .setIsPlayable(true)
-                                        .setMediaType(MediaMetadata.MEDIA_TYPE_VIDEO)
+                                        .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
                                         .setArtworkUri(iconUri)
                                         .build())
                                     .build()
@@ -272,7 +275,7 @@ class PlaybackService : MediaLibraryService() {
                             .setTitle(if (mediaId == "PLAYLIST_SECTION") "Cola de YouTube" else "Mis Descargas")
                             .setIsBrowsable(true)
                             .setIsPlayable(false)
-                            .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+                            .setMediaType(if (mediaId == "PLAYLIST_SECTION") MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS else MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
                             .setArtworkUri(iconUri)
                             .build())
                         .build()
@@ -290,7 +293,7 @@ class PlaybackService : MediaLibraryService() {
                                 .setArtist("FrogDownloader")
                                 .setIsBrowsable(false)
                                 .setIsPlayable(true)
-                                .setMediaType(MediaMetadata.MEDIA_TYPE_VIDEO)
+                                .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
                                 .setArtworkUri(iconUriLocal)
                                 .build())
                             .build()
