@@ -222,6 +222,7 @@ var esPlaylistDetectadaGlobal by mutableStateOf(false)
 var urlParaDescargarGlobal by mutableStateOf("")
 var cargandoVideoGlobal by mutableStateOf(false)
 var cargandoPlaylistGlobal by mutableStateOf(false)
+var mostrarAvisoSuperiorDescarga by mutableStateOf(false)
 
 @Composable
 fun esModoOscuroActivo(): Boolean {
@@ -478,7 +479,10 @@ fun InterfazPrincipal(windowSizeClass: WindowSizeClass) {
                 TextButton(
                     onClick = {
                         mostrarDialogoSalir = false
-                        (contexto as? Activity)?.finish()
+                        (contexto as? Activity)?.let {
+                            it.finishAffinity()
+                            kotlin.system.exitProcess(0)
+                        }
                     }
                 ) {
                     Text("Sí, Salir", color = Color.Red, fontWeight = FontWeight.Bold)
@@ -519,6 +523,14 @@ fun InterfazPrincipal(windowSizeClass: WindowSizeClass) {
     // 1. Aplicamos nuestra paleta de colores personalizada a toda la app
     MaterialTheme(colorScheme = colorSchemeActual) {
 
+        // --- LÓGICA DE AUTO-OCULTADO DEL AVISO ---
+        if (mostrarAvisoSuperiorDescarga) {
+            LaunchedEffect(Unit) {
+                delay(1000)
+                mostrarAvisoSuperiorDescarga = false
+            }
+        }
+
         // 2. Usamos un Box principal para colocar la imagen de fondo en una capa trasera
         Box(modifier = Modifier.fillMaxSize()) {
             Image(
@@ -537,6 +549,45 @@ fun InterfazPrincipal(windowSizeClass: WindowSizeClass) {
                 contentScale = ContentScale.Crop, // Fuerza a la imagen a cubrir toda la pantalla sin deformarse
                 colorFilter = if (esOscuro) ColorFilter.tint(Color.Black.copy(alpha = 0.75f), BlendMode.Darken) else null
             )
+
+            // --- AVISO SUPERIOR DE INICIO DE DESCARGA ---
+            AnimatedVisibility(
+                visible = mostrarAvisoSuperiorDescarga,
+                enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { -it * 2 }) + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 48.dp)
+            ) {
+                val esGlass = temaAppGlobal == ModoTema.CRISTAL_IOS
+                Card(
+                    shape = CircleShape,
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (esGlass) Color.White.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primary
+                    ),
+                    modifier = if (esGlass) Modifier.glass(true, shape = CircleShape, opacity = 0.2f, esOscuro = esOscuro) else Modifier,
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Download,
+                            contentDescription = null,
+                            tint = if (esGlass) Color.White else MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "Descarga Iniciada",
+                            color = if (esGlass) Color.White else MaterialTheme.colorScheme.onPrimary,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
 
             // 3. El contenedor visual flota de forma transparente sobre la imagen
             Row(modifier = Modifier.fillMaxSize()) {
@@ -2565,6 +2616,9 @@ fun PantallaConfiguraciones() {
 
 fun iniciarDescarga(url: String, contexto: android.content.Context, descargarTodoElCanal: Boolean = false) {
     if (url.isEmpty()) return
+
+    // Mostrar aviso visual in-app
+    mostrarAvisoSuperiorDescarga = true
 
     // Reiniciamos la bandera antes de empezar
     detenerDescargaMasivaGlobal = false
