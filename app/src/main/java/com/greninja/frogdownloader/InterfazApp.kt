@@ -140,6 +140,7 @@ import org.json.JSONObject
 import android.content.ContentUris
 import android.os.Build
 import android.provider.MediaStore
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -354,7 +355,7 @@ fun obtenerUriMediaStore(contexto: Context, archivo: File): Uri? {
     val contentResolver = contexto.contentResolver
     val selection = MediaStore.MediaColumns.DATA + "=?"
     val selectionArgs = arrayOf(archivo.absolutePath)
-    
+
     val bases = mutableListOf(
         MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
         MediaStore.Video.Media.EXTERNAL_CONTENT_URI
@@ -412,7 +413,7 @@ fun LinearWavyProgressIndicator(
         val centerY = height / 2
         val amplitude = amplitudAnimada.dp.toPx()
         val wavelength = 25.dp.toPx()
-        
+
         // Dibuja el fondo (track)
         drawLine(
             color = trackColor,
@@ -425,7 +426,7 @@ fun LinearWavyProgressIndicator(
         val path = Path()
         val segments = 80
         val activeWidth = width * progress
-        
+
         if (activeWidth > 0f) {
             for (i in 0..segments) {
                 val x = (i.toFloat() / segments) * activeWidth
@@ -456,9 +457,43 @@ fun InterfazPrincipal(windowSizeClass: WindowSizeClass) {
     val navController = rememberNavController()
     var pantallaActual by remember { mutableStateOf(Pantallas.Video) }
     val contexto = LocalContext.current
+    var mostrarDialogoSalir by remember { mutableStateOf(false) }
+
+    // Manejo del botón de retroceso solo en la pantalla de Stream (Video)
+    BackHandler(enabled = pantallaActual == Pantallas.Video) {
+        mostrarDialogoSalir = true
+    }
+
+    if (mostrarDialogoSalir) {
+        val esOscuro = esModoOscuroActivo()
+        val colorTexto = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
+
+        AlertDialog(
+            onDismissRequest = { mostrarDialogoSalir = false },
+            containerColor = if (temaAppGlobal == ModoTema.CRISTAL_IOS) (if (esOscuro) Color.Black.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.9f)) else MaterialTheme.colorScheme.surface,
+            modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.extraLarge) else Modifier,
+            title = { Text("¿Cerrar Aplicación?", color = colorTexto, fontWeight = FontWeight.Bold) },
+            text = { Text("¿Realmente quieres salir de FrogDownloader?", color = colorTexto.copy(alpha = 0.8f)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        mostrarDialogoSalir = false
+                        (contexto as? Activity)?.finish()
+                    }
+                ) {
+                    Text("Sí, Salir", color = Color.Red, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { mostrarDialogoSalir = false }) {
+                    Text("No, Seguir", color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.7f) else Color.Unspecified)
+                }
+            }
+        )
+    }
 
     val esTablet = windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact
-    
+
     // --- CARGAR PREFERENCIAS AL INICIAR ---
     LaunchedEffect(Unit) {
         val prefs = PreferenciasApp(contexto)
@@ -583,7 +618,7 @@ fun InterfazPrincipal(windowSizeClass: WindowSizeClass) {
                     },
                     floatingActionButton = {
                         val urlADescargar = if (urlActualParaDescargarGlobal.isNotEmpty()) urlActualParaDescargarGlobal else urlParaDescargarIndividualGlobal
-                        
+
                         if (pantallaActual == Pantallas.Video && urlADescargar.isNotEmpty()) {
                             // BOTÓN FLOTANTE LIMÓN CON ÍCONO GRIS OSCURO
                             FloatingActionButton(
@@ -727,12 +762,12 @@ object GestorReproduccion {
                 request.addOption("--no-playlist")
                 request.addOption("--ignore-config")
                 request.addOption("--socket-timeout", "5")
-                
+
                 // Forzamos la obtención directa del link sin procesar metadatos pesados
                 request.addOption("--get-url")
-                
+
                 val alturaMapeada = resolucionReproduccionGlobal.replace("p", "")
-                
+
                 // --- OPTIMIZACIÓN TURBO: SI NO ESTAMOS EN APP, SOLO PEDIMOS AUDIO (MUCHO MÁS RÁPIDO) ---
                 if (appEnPrimerPlanoGlobal) {
                     // PRIORIDAD: Opus 251 (Mejor audio) + Video en resolución elegida
@@ -753,7 +788,7 @@ object GestorReproduccion {
                     } catch (e: Exception) { e.printStackTrace() }
 
                     val exoPlayer = MainApp.exoPlayerGlobal ?: return@execute
-                    
+
                     // OPTIMIZACIÓN: User Agent más compatible con los clientes de streaming (iOS/Android)
                     val userAgentOficial = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
                     val dataSourceFactory = DefaultHttpDataSource.Factory()
@@ -849,7 +884,7 @@ fun PantallaVideo(esTablet: Boolean = false) {
         if (exoPlayer.playbackState == androidx.media3.common.Player.STATE_READY) {
             cargandoVideoGlobal = false
         }
-        
+
         exoPlayer.addListener(object : androidx.media3.common.Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == androidx.media3.common.Player.STATE_ENDED) {
@@ -1046,7 +1081,7 @@ fun PantallaVideo(esTablet: Boolean = false) {
                     // Columna Izquierda: Input y Reproductor
                     Column(modifier = Modifier.weight(1.2f)) {
                         val colorTexto = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
-                        
+
                         OutlinedTextField(
                             value = urlTexto,
                             onValueChange = {
@@ -1098,7 +1133,7 @@ fun PantallaVideo(esTablet: Boolean = false) {
                 // DISEÑO MÓVIL ORIGINAL
                 Column(modifier = Modifier.padding(16.dp)) {
                     val colorTexto = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
-                    
+
                     OutlinedTextField(
                         value = urlTexto,
                         onValueChange = {
@@ -1138,7 +1173,7 @@ fun PantallaVideo(esTablet: Boolean = false) {
                     ControlesPlaylist(contexto)
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Contenido de la Lista de Reproducción", 
+                        text = "Contenido de la Lista de Reproducción",
                         style = MaterialTheme.typography.titleMedium,
                         color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
                     )
@@ -1301,7 +1336,7 @@ fun InfoVideoActual() {
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = tituloVideoActualGlobal, 
+                text = tituloVideoActualGlobal,
                 style = MaterialTheme.typography.bodyLarge,
                 color = if (esGlass) Color.White else MaterialTheme.colorScheme.onSurface
             )
@@ -1315,20 +1350,20 @@ fun ControlesPlaylist(contexto: Context) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
             val colorTexto = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
             IconButton(
-                onClick = { GestorReproduccion.cargarYReproducirIndice(indiceActualVideoGlobal - 1, contexto) }, 
+                onClick = { GestorReproduccion.cargarYReproducirIndice(indiceActualVideoGlobal - 1, contexto) },
                 enabled = indiceActualVideoGlobal > 0,
                 colors = IconButtonDefaults.iconButtonColors(contentColor = colorTexto)
             ) {
                 Icon(Icons.Default.SkipPrevious, contentDescription = "Anterior", modifier = Modifier.size(32.dp))
             }
             Text(
-                text = "Video ${indiceActualVideoGlobal + 1} de ${videosPlaylistGlobal.size}", 
-                style = MaterialTheme.typography.bodyMedium, 
+                text = "Video ${indiceActualVideoGlobal + 1} de ${videosPlaylistGlobal.size}",
+                style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(horizontal = 16.dp),
                 color = colorTexto
             )
             IconButton(
-                onClick = { GestorReproduccion.cargarYReproducirIndice(indiceActualVideoGlobal + 1, contexto) }, 
+                onClick = { GestorReproduccion.cargarYReproducirIndice(indiceActualVideoGlobal + 1, contexto) },
                 enabled = indiceActualVideoGlobal < videosPlaylistGlobal.size - 1,
                 colors = IconButtonDefaults.iconButtonColors(contentColor = colorTexto)
             ) {
@@ -1347,7 +1382,7 @@ fun ListaVideosPlaylist(cargando: Boolean, items: List<VideoPlaylistItem>, conte
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         itemsIndexed(items, key = { _, item -> item.urlOriginalVideo + item.titulo }) { index, item ->
             val esElVideoActual = index == indiceActualVideoGlobal
-            
+
             val dismissState = rememberSwipeToDismissBoxState(
                 confirmValueChange = { valor ->
                     if (valor == SwipeToDismissBoxValue.EndToStart) {
@@ -1364,7 +1399,7 @@ fun ListaVideosPlaylist(cargando: Boolean, items: List<VideoPlaylistItem>, conte
                         } else if (index < indiceActualVideoGlobal) {
                             indiceActualVideoGlobal--
                         }
-                        
+
                         videosPlaylistGlobal.removeAt(index)
                         PlaybackService.actualizarListaEnAuto()
                         true
@@ -1715,7 +1750,7 @@ fun PantallaDescargas() {
                                     // 1. Intentamos el borrado tradicional
                                     if (itemCancion.archivoReal.delete()) {
                                         Toast.makeText(contexto, "Archivo eliminado", Toast.LENGTH_SHORT).show()
-                                        refrescando++ 
+                                        refrescando++
                                     } else {
                                         // 2. Si falla (común en Android 11+ con archivos antiguos), usamos MediaStore
                                         try {
@@ -1771,7 +1806,7 @@ fun PantallaConfiguraciones() {
 
         var expandidoTema by remember { mutableStateOf(false) }
         val colorTexto = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White else MaterialTheme.colorScheme.onSurface
-        
+
         ExposedDropdownMenuBox(expanded = expandidoTema, onExpandedChange = { expandidoTema = !expandidoTema }) {
             OutlinedTextField(
                 value = when(temaAppGlobal) {
@@ -1797,7 +1832,7 @@ fun PantallaConfiguraciones() {
                 )
             )
             ExposedDropdownMenu(
-                expanded = expandidoTema, 
+                expanded = expandidoTema,
                 onDismissRequest = { expandidoTema = false },
                 modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.background(Color.Black.copy(alpha = 0.9f)).border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.medium) else Modifier
             ) {
@@ -1854,14 +1889,14 @@ fun PantallaConfiguraciones() {
                 )
             )
             ExposedDropdownMenu(
-                expanded = expandidoRes, 
+                expanded = expandidoRes,
                 onDismissRequest = { expandidoRes = false },
                 modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.background(Color.Black.copy(alpha = 0.9f)).border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.medium) else Modifier
             ) {
                 listOf("360p", "480p", "720p").forEach { res ->
                     val esSeleccionado = resolucionReproduccionGlobal == res
                     DropdownMenuItem(
-                        text = { Text(res, color = if (esSeleccionado && temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else colorTexto) }, 
+                        text = { Text(res, color = if (esSeleccionado && temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else colorTexto) },
                         onClick = {
                             resolucionReproduccionGlobal = res
                             expandidoRes = false
@@ -1940,14 +1975,14 @@ fun PantallaConfiguraciones() {
                 )
             )
             ExposedDropdownMenu(
-                expanded = expandidoBajos, 
+                expanded = expandidoBajos,
                 onDismissRequest = { expandidoBajos = false },
                 modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.background(Color.Black.copy(alpha = 0.9f)).border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.medium) else Modifier
             ) {
                 listOf("Bajo", "Medio", "Alto").forEach { nivel ->
                     val esSeleccionado = nivelBajos == nivel
                     DropdownMenuItem(
-                        text = { Text(nivel, color = if (esSeleccionado && temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else colorTexto) }, 
+                        text = { Text(nivel, color = if (esSeleccionado && temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else colorTexto) },
                         onClick = {
                             nivelBajos = nivel
                             expandidoBajos = false
@@ -1988,16 +2023,16 @@ fun PantallaConfiguraciones() {
                 )
             )
             ExposedDropdownMenu(
-                expanded = expandidoFormatoAudio, 
+                expanded = expandidoFormatoAudio,
                 onDismissRequest = { expandidoFormatoAudio = false },
                 modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.background(Color.Black.copy(alpha = 0.9f)).border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.medium) else Modifier
             ) {
                 listOf("mp3", "m4a", "opus").forEach { formato ->
                     val esSeleccionado = formatoAudioGlobal == formato
                     DropdownMenuItem(
-                        text = { Text(formato.uppercase(), color = if (esSeleccionado && temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else colorTexto) }, 
-                        onClick = { 
-                            formatoAudioGlobal = formato 
+                        text = { Text(formato.uppercase(), color = if (esSeleccionado && temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else colorTexto) },
+                        onClick = {
+                            formatoAudioGlobal = formato
                             expandidoFormatoAudio = false
                             PreferenciasApp(contexto).guardarString(PreferenciasApp.KEY_FORMATO_AUDIO, formato)
                         }
@@ -2030,16 +2065,16 @@ fun PantallaConfiguraciones() {
                 )
             )
             ExposedDropdownMenu(
-                expanded = expandidoCalidadAudio, 
+                expanded = expandidoCalidadAudio,
                 onDismissRequest = { expandidoCalidadAudio = false },
                 modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.background(Color.Black.copy(alpha = 0.9f)).border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.medium) else Modifier
             ) {
                 listOf("128k", "192k", "320k").forEach { bits ->
                     val esSeleccionado = calidadAudioGlobal == bits
                     DropdownMenuItem(
-                        text = { Text(bits, color = if (esSeleccionado && temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else colorTexto) }, 
-                        onClick = { 
-                            calidadAudioGlobal = bits 
+                        text = { Text(bits, color = if (esSeleccionado && temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else colorTexto) },
+                        onClick = {
+                            calidadAudioGlobal = bits
                             expandidoCalidadAudio = false
                             PreferenciasApp(contexto).guardarString(PreferenciasApp.KEY_CALIDAD_AUDIO, bits)
                         }
@@ -2057,7 +2092,7 @@ fun PantallaConfiguraciones() {
         ) {
             OutlinedTextField(
                 value = rutaGuardadoAudioGlobal,
-                onValueChange = { 
+                onValueChange = {
                     rutaGuardadoAudioGlobal = it
                     PreferenciasApp(contexto).guardarString(PreferenciasApp.KEY_RUTA_AUDIO, it)
                 },
@@ -2110,16 +2145,16 @@ fun PantallaConfiguraciones() {
                 )
             )
             ExposedDropdownMenu(
-                expanded = expandidoFormatoVideo, 
+                expanded = expandidoFormatoVideo,
                 onDismissRequest = { expandidoFormatoVideo = false },
                 modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.background(Color.Black.copy(alpha = 0.9f)).border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.medium) else Modifier
             ) {
                 listOf("mp4", "mkv", "webm").forEach { formato ->
                     val esSeleccionado = formatoVideoGlobal == formato
                     DropdownMenuItem(
-                        text = { Text(formato.uppercase(), color = if (esSeleccionado && temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else colorTexto) }, 
-                        onClick = { 
-                            formatoVideoGlobal = formato 
+                        text = { Text(formato.uppercase(), color = if (esSeleccionado && temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else colorTexto) },
+                        onClick = {
+                            formatoVideoGlobal = formato
                             expandidoFormatoVideo = false
                             PreferenciasApp(contexto).guardarString(PreferenciasApp.KEY_FORMATO_VIDEO, formato)
                         }
@@ -2152,15 +2187,15 @@ fun PantallaConfiguraciones() {
                 )
             )
             ExposedDropdownMenu(
-                expanded = expandidoCalidadVideo, 
+                expanded = expandidoCalidadVideo,
                 onDismissRequest = { expandidoCalidadVideo = false },
                 modifier = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Modifier.background(Color.Black.copy(alpha = 0.9f)).border(0.5.dp, Color.White.copy(alpha = 0.2f), MaterialTheme.shapes.medium) else Modifier
             ) {
                 listOf("360p", "480p", "720p", "1080p").forEach { cal ->
                     val esSeleccionado = calidadVideoGlobal == cal
                     DropdownMenuItem(
-                        text = { Text(cal, color = if (esSeleccionado && temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else colorTexto) }, 
-                        onClick = { 
+                        text = { Text(cal, color = if (esSeleccionado && temaAppGlobal == ModoTema.CRISTAL_IOS) ColorGlassVerdePrimario else colorTexto) },
+                        onClick = {
                             calidadVideoGlobal = cal
                             expandidoCalidadVideo = false
                             PreferenciasApp(contexto).guardarString(PreferenciasApp.KEY_CALIDAD_VIDEO, cal)
@@ -2179,7 +2214,7 @@ fun PantallaConfiguraciones() {
         ) {
             OutlinedTextField(
                 value = rutaGuardadoVideoGlobal,
-                onValueChange = { 
+                onValueChange = {
                     rutaGuardadoVideoGlobal = it
                     PreferenciasApp(contexto).guardarString(PreferenciasApp.KEY_RUTA_VIDEO, it)
                 },
@@ -2372,13 +2407,13 @@ fun PantallaConfiguraciones() {
                         Spacer(modifier = Modifier.height(50.dp))
 
                         // 3. INFORMACIÓN DEL PERFIL
-                        val colorTextoDialog = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.Black else Color.Black // In a dialog with white background, black text is best. But the user said "gris oscuro se vuelvan gris claro". 
-                        // Wait, the donation dialog card has containerColor = Color.White. 
+                        val colorTextoDialog = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.Black else Color.Black // In a dialog with white background, black text is best. But the user said "gris oscuro se vuelvan gris claro".
+                        // Wait, the donation dialog card has containerColor = Color.White.
                         // If the user wants ALL texts light, maybe I should make the card glassy too?
                         // "quiero que los textos que aun estan en gris oscuro se vuelvan gris claro y sean legibles"
                         // On a white background (CardDefaults.cardColors(containerColor = Color.White)), light grey is NOT legible.
                         // I will make the donation card Glassy if the theme is Glass.
-                        
+
                         Column(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
@@ -2399,7 +2434,7 @@ fun PantallaConfiguraciones() {
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.7f) else Color.Gray
                             )
-                            
+
                             Spacer(modifier = Modifier.height(16.dp))
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 32.dp))
                             Spacer(modifier = Modifier.height(16.dp))
@@ -2427,7 +2462,7 @@ fun PantallaConfiguraciones() {
                             ) {
                                 Text("Donar vía PayPal", color = Color.White, fontWeight = FontWeight.Bold)
                             }
-                            
+
                             TextButton(onClick = { mostrarTarjetaDonacion = false }) {
                                 Text("Cerrar", color = if (temaAppGlobal == ModoTema.CRISTAL_IOS) Color.White.copy(alpha = 0.6f) else Color.Gray)
                             }
@@ -2535,7 +2570,16 @@ fun iniciarDescarga(url: String, contexto: android.content.Context, descargarTod
     detenerDescargaMasivaGlobal = false
 
     thread {
-        val idUnico = url.hashCode().toString()
+        val idUnico = url.hashCode()
+        val notificationManager = contexto.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+
+        // Configurar notificación base
+        val builderProgreso = androidx.core.app.NotificationCompat.Builder(contexto, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_LOW)
+
         try {
             val carpetaPublica = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             val subCarpetaElegida = if (formatoSoloAudioGlobal) rutaGuardadoAudioGlobal else rutaGuardadoVideoGlobal
@@ -2546,72 +2590,67 @@ fun iniciarDescarga(url: String, contexto: android.content.Context, descargarTod
             // LÓGICA DE CANCELACIÓN EN CASO DE PLAYLIST MASIVA
             // ====================================================================
             if (descargarTodoElCanal && (url.contains("playlist") || url.contains("&list="))) {
-                // 1. Obtenemos rápido la lista plana de IDs de la playlist usando execute (VideoInfo no tiene 'entries')
-                val reqPlaylist = YoutubeDLRequest(url)
-                // --- SOLUCIÓN ERROR ATTESTATION (adaq) ---
-                reqPlaylist.addOption("--extractor-args", "youtube:player_client=android,mweb,ios,web;player_skip=webpage,configs")
-                // ------------------------------------------
-                reqPlaylist.addOption("--flat-playlist")
-                reqPlaylist.addOption("--yes-playlist")
-                reqPlaylist.addOption("--dump-single-json")
-                
-                val response = YoutubeDL.getInstance().execute(reqPlaylist)
-                val json = JSONObject(response.out)
+                val requestInfo = YoutubeDLRequest(url)
+                requestInfo.addOption("--flat-playlist")
+                requestInfo.addOption("--dump-single-json")
+                val responseInfo = YoutubeDL.getInstance().execute(requestInfo)
+                val json = JSONObject(responseInfo.out)
                 val entriesJson = json.optJSONArray("entries")
                 val totalVideos = entriesJson?.length() ?: 0
 
                 // Registrar la descarga masiva en la interfaz de "En Curso"
-                val nuevaDescargaMasiva = DescargaInfo(idUnico, "Lista ($totalVideos elementos)", 0f, formatoSoloAudioGlobal, false)
+                val nuevaDescargaMasiva = DescargaInfo(idUnico.toString(), "Lista ($totalVideos elementos)", 0f, formatoSoloAudioGlobal, false)
                 androidx.core.content.ContextCompat.getMainExecutor(contexto).execute {
                     listaDescargasActivas.add(nuevaDescargaMasiva)
                 }
 
+                // Notificación inicial de playlist
+                builderProgreso.setContentTitle("Descargando Lista")
+                    .setContentText("Preparando...")
+                    .setProgress(100, 0, true)
+                notificationManager.notify(idUnico, builderProgreso.build())
+
                 // 2. Descargamos video por video de la playlist de forma controlada
                 if (entriesJson != null) {
                     for (index in 0 until entriesJson.length()) {
-                        // ¡FRENO DE EMERGENCIA! Si el usuario presionó el botón de Stop, rompemos el bucle
-                        if (detenerDescargaMasivaGlobal) {
-                            println("YOUTUBEDL: Descarga masiva cancelada por el usuario.")
-                            return@thread
-                        }
+                        if (detenerDescargaMasivaGlobal) break
 
                         val video = entriesJson.getJSONObject(index)
-                        val idVideo = video.optString("id", video.optString("url", video.optString("webpage_url", "")))
-                        
+                        val idVideo = video.optString("id", video.optString("url", ""))
+
                         if (idVideo.isNotEmpty()) {
                             try {
-                                val urlIndividual = if (idVideo.contains("http")) idVideo else "https://www.youtube.com/watch?v=$idVideo"
+                                val urlIndividual = if (idVideo.startsWith("http")) idVideo else "https://www.youtube.com/watch?v=$idVideo"
                                 val requestIndividual = YoutubeDLRequest(urlIndividual)
-                                // --- SOLUCIÓN ERROR ATTESTATION (adaq) ---
-                                requestIndividual.addOption("--extractor-args", "youtube:player_client=android,mweb,ios,web;player_skip=webpage,configs")
-                                // ------------------------------------------
-
-                                // Configuramos formato individual
-                                requestIndividual.addOption("--no-mtime")
+                                requestIndividual.addOption("-o", "${rutaDestino.absolutePath}/%(title)s.%(ext)s")
 
                                 if (formatoSoloAudioGlobal) {
-                                    requestIndividual.addOption("-f", "bestaudio/best")
-                                    requestIndividual.addOption("--extract-audio")
+                                    requestIndividual.addOption("-x")
                                     requestIndividual.addOption("--audio-format", formatoAudioGlobal)
-                                    requestIndividual.addOption("--audio-quality", calidadAudioGlobal.replace("k", ""))
-                                    requestIndividual.addOption("--no-check-certificates")
-                                    // Dejamos que youtube-dl ponga la extensión correcta según el formato solicitado
-                                    requestIndividual.addOption("-o", "${rutaDestino.absolutePath}/%(title)s.%(ext)s")
+                                    requestIndividual.addOption("--audio-quality", calidadAudioGlobal)
                                 } else {
-                                    val alturaVideo = calidadVideoGlobal.replace("p", "")
-                                    requestIndividual.addOption("-f", "bestvideo[height<=$alturaVideo]+bestaudio/best[height<=$alturaVideo]/best")
+                                    val alturaMapeada = calidadVideoGlobal.replace("p", "")
+                                    requestIndividual.addOption("-f", "bestvideo[height<=$alturaMapeada]+bestaudio/best[height<=$alturaMapeada]/best")
                                     requestIndividual.addOption("--merge-output-format", formatoVideoGlobal)
-                                    requestIndividual.addOption("--no-check-certificates")
-                                    requestIndividual.addOption("-o", "${rutaDestino.absolutePath}/%(title)s.%(ext)s")
                                 }
+
+                                val tituloVideo = video.optString("title", "Video ${index + 1}")
 
                                 // Ejecutamos la descarga del video actual y calculamos el progreso global de la playlist
                                 YoutubeDL.getInstance().execute(requestIndividual) { progresoVideo, _, _ ->
                                     val progresoGlobal = ((index.toFloat() / totalVideos.toFloat()) * 100f) + (progresoVideo / totalVideos.toFloat())
-                                    val idx = listaDescargasActivas.indexOfFirst { it.id == idUnico }
+
+                                    // Actualizar interfaz
+                                    val idx = listaDescargasActivas.indexOfFirst { it.id == idUnico.toString() }
                                     if (idx != -1) {
                                         listaDescargasActivas[idx] = listaDescargasActivas[idx].copy(progreso = progresoGlobal)
                                     }
+
+                                    // Actualizar notificación
+                                    builderProgreso.setContentTitle("Descargando: ${index + 1}/$totalVideos")
+                                        .setContentText(tituloVideo)
+                                        .setProgress(100, progresoGlobal.toInt(), false)
+                                    notificationManager.notify(idUnico, builderProgreso.build())
                                 }
                             } catch (e: Exception) {
                                 android.util.Log.e("FROG_DOWNLOAD", "Error en video de playlist: ${e.message}")
@@ -2624,61 +2663,57 @@ fun iniciarDescarga(url: String, contexto: android.content.Context, descargarTod
                 // DESCARGA TRADICIONAL DE UN SOLO VIDEO INDIVIDUAL
                 // ====================================================================
                 val requestInfo = YoutubeDLRequest(url)
-                // --- SOLUCIÓN ERROR ATTESTATION (adaq) ---
-                requestInfo.addOption("--extractor-args", "youtube:player_client=android,mweb,ios,web;player_skip=webpage,configs")
-                // ------------------------------------------
                 val streamInfo = YoutubeDL.getInstance().getInfo(requestInfo)
-
                 val tituloVideo = streamInfo.title ?: "Descarga"
+
+                // Notificación inicial individual
+                builderProgreso.setContentTitle("Descargando: $tituloVideo")
+                    .setContentText("0%")
+                    .setProgress(100, 0, false)
+                notificationManager.notify(idUnico, builderProgreso.build())
+
                 val requestUnico = YoutubeDLRequest(url)
-                requestUnico.addOption("--no-mtime")
-                // --- SOLUCIÓN ERROR ATTESTATION (adaq) ---
-                requestUnico.addOption("--extractor-args", "youtube:player_client=android,mweb,ios,web;player_skip=webpage,configs")
-                // ------------------------------------------
-                requestUnico.addOption("--no-playlist")
+                requestUnico.addOption("-o", "${rutaDestino.absolutePath}/%(title)s.%(ext)s")
 
                 if (formatoSoloAudioGlobal) {
-                    requestUnico.addOption("-f", "bestaudio/best")
-                    requestUnico.addOption("--extract-audio")
+                    requestUnico.addOption("-x")
                     requestUnico.addOption("--audio-format", formatoAudioGlobal)
-                    requestUnico.addOption("--audio-quality", calidadAudioGlobal.replace("k", ""))
-                    requestUnico.addOption("-o", "${rutaDestino.absolutePath}/%(title)s.%(ext)s")
+                    requestUnico.addOption("--audio-quality", calidadAudioGlobal)
                 } else {
-                    val alturaVideo = calidadVideoGlobal.replace("p", "")
-                    requestUnico.addOption("-f", "bestvideo[height<=$alturaVideo]+bestaudio/best[height<=$alturaVideo]/best")
+                    val alturaMapeada = calidadVideoGlobal.replace("p", "")
+                    requestUnico.addOption("-f", "bestvideo[height<=$alturaMapeada]+bestaudio/best[height<=$alturaMapeada]/best")
                     requestUnico.addOption("--merge-output-format", formatoVideoGlobal)
-                    requestUnico.addOption("-o", "${rutaDestino.absolutePath}/%(title)s.%(ext)s")
                 }
 
-                val nuevaDescarga = DescargaInfo(idUnico, tituloVideo, 0f, formatoSoloAudioGlobal, false)
+                val nuevaDescarga = DescargaInfo(idUnico.toString(), tituloVideo, 0f, formatoSoloAudioGlobal, false)
                 androidx.core.content.ContextCompat.getMainExecutor(contexto).execute {
                     listaDescargasActivas.add(nuevaDescarga)
                 }
 
                 YoutubeDL.getInstance().execute(requestUnico) { progreso, _, _ ->
-                    val index = listaDescargasActivas.indexOfFirst { it.id == idUnico }
-                    if (index != -1) {
-                        listaDescargasActivas[index] = listaDescargasActivas[index].copy(progreso = progreso)
+                    // Actualizar interfaz
+                    val idx = listaDescargasActivas.indexOfFirst { it.id == idUnico.toString() }
+                    if (idx != -1) {
+                        listaDescargasActivas[idx] = listaDescargasActivas[idx].copy(progreso = progreso)
                     }
+
+                    // Actualizar notificación
+                    builderProgreso.setContentText("${progreso.toInt()}%")
+                        .setProgress(100, progreso.toInt(), false)
+                    notificationManager.notify(idUnico, builderProgreso.build())
                 }
             }
 
             // --- CIERRE EXITOSO Y LIMPIEZA DE LA INTERFAZ ---
-            androidx.core.content.ContextCompat.getMainExecutor(contexto).execute {
-                val indexFin = listaDescargasActivas.indexOfFirst { it.id == idUnico }
-                if (indexFin != -1) {
-                    listaDescargasActivas.removeAt(indexFin)
-                }
-            }
+            notificationManager.cancel(idUnico) // Quitar la de progreso
 
-            // Notificación de éxito
-            val builder = androidx.core.app.NotificationCompat.Builder(contexto, "descargas_channel")
-                .setSmallIcon(android.R.drawable.stat_sys_download_done)
-                .setContentTitle("¡Descarga Finalizada!")
-                .setContentText("Tus archivos se guardaron correctamente.")
-                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_DEFAULT)
-            val notificationManager = contexto.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-            notificationManager.notify(idUnico.hashCode(), builder.build())
+            androidx.core.content.ContextCompat.getMainExecutor(contexto).execute {
+                val indexSuccess = listaDescargasActivas.indexOfFirst { it.id == idUnico.toString() }
+                if (indexSuccess != -1) {
+                    listaDescargasActivas.removeAt(indexSuccess)
+                }
+                Toast.makeText(contexto, "¡Descarga completada!", Toast.LENGTH_SHORT).show()
+            }
 
         } catch (e: Exception) {
             e.printStackTrace()
@@ -2689,7 +2724,7 @@ fun iniciarDescarga(url: String, contexto: android.content.Context, descargarTod
 
             androidx.core.content.ContextCompat.getMainExecutor(contexto).execute {
                 // 1. Quitamos la barra de carga trabada de la pantalla
-                val indexError = listaDescargasActivas.indexOfFirst { it.id == idUnico }
+                val indexError = listaDescargasActivas.indexOfFirst { it.id == idUnico.toString() }
                 if (indexError != -1) {
                     listaDescargasActivas.removeAt(indexError)
                 }
